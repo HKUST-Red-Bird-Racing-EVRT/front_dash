@@ -39,7 +39,7 @@ void loop() {
     // put your main code here, to run repeatedly:
 
     // wait for first time receive long frame from VCU, then wait 9ms and send a synchronization frame to both SSRUs
-
+    // make sure if not received (not ERROR::OK) then need retry, in case other systems not powered on / have issues
 
 
 
