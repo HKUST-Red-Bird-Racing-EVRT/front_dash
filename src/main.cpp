@@ -1,11 +1,6 @@
-#include <LiquidCrystal_I2C.h>
-
-#include <SPI.h>
-
-#include <can.h>
+#include <Arduino.h>
 #include <mcp2515.h>
-
-#include <SoftwareSerial.h>
+#include <LiquidCrystal_I2C.h>
 
 #include "pinMap.h"
 #include "can_msg.h"
@@ -15,7 +10,6 @@ LiquidCrystal_I2C lcd(0x27,20,4);
 
 //update ticks
 uint32_t lastLcdTick = 0;
-
 
 void setup() {
   // put your setup code here, to run once:
@@ -28,7 +22,7 @@ void setup() {
   // Print a message to the LCD.
   lcd.backlight();
   lcd.setCursor(0,0);
-  lcd.print("Nigger");
+  lcd.print("Test");
 
   pinMode(HC12_SET,OUTPUT);
   digitalWrite(HC12_SET,LOW);
@@ -40,6 +34,7 @@ void setup() {
 }
 
 void loop() {
+    // put your main code here, to run repeatedly:
     uint32_t tick = millis();
 
     if(tick - lastLcdTick >= 100) {
