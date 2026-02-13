@@ -3,13 +3,15 @@
 #include <LiquidCrystal_I2C.h>
 
 #include "pinMap.h"
-#include "can_msg.h"
+
 
 MCP2515 can0(CAN0_CS);
 LiquidCrystal_I2C lcd(0x27,20,4);
 
 //update ticks
 uint32_t lastLcdTick = 0;
+
+
 
 void setup() {
   // put your setup code here, to run once:
@@ -35,6 +37,13 @@ void setup() {
 
 void loop() {
     // put your main code here, to run repeatedly:
+
+    // wait for first time receive long frame from VCU, then wait 9ms and send a synchronization frame to both SSRUs
+
+
+
+
+
     uint32_t tick = millis();
 
     if(tick - lastLcdTick >= 100) {
