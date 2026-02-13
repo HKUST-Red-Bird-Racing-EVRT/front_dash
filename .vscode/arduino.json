@@ -1,6 +1,0 @@
-{
-    "configuration": "bootloader=uart0,eeprom=keep,baudrate=default,variant=modelP,BOD=disabled,LTO=Os,clock=16MHz_external",
-    "board": "MiniCore:avr:328",
-    "sketch": "front_dash.ino",
-    "output": "build"
-}
