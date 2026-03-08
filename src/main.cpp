@@ -2,59 +2,61 @@
 #include <mcp2515.h>
 #include <LiquidCrystal_I2C.h>
 
+#include "Scheduler.hpp"
+
 #include "pinMap.h"
+#include "Structs.h"
 
+#include "CanManager.hpp"
+#include "Radio.hpp"
+#include "Screen.hpp"
 
-MCP2515 can0(CAN0_CS);
-LiquidCrystal_I2C lcd(0x27,20,4);
+MCP2515 can_vcu(CAN0_CS);
+MCP2515 can_ssru(CAN1_CS);
 
-//update ticks
-uint32_t lastLcdTick = 0;
+MCP2515 cans[NUM_MCP] = {can_vcu, can_ssru};
 
+CanManager can_manager{can_vcu, can_ssru};
+Radio radio{};
+Screen screen{};
 
+Scheduler<3, NUM_MCP + 2> scheduler(
+    10000,  // period_us
+    500,    // spin_threshold_us
+    *micros // current_time_us function pointer
+);
 
-void setup() {
-  // put your setup code here, to run once:
+void setup()
+{
+    for (int i = 0; i < NUM_IN; ++i)
+    {
 
-  can0.reset();
-  can0.setBitrate(CAN_500KBPS,MCP_20MHZ);
-  can0.setNormalMode();
+        pinMode();
+        digitalWrite(, LOW);
+    }
+    for (int i = 0; i < NUM_OUT; ++i)
+    {
 
-  lcd.init();
-  // Print a message to the LCD.
-  lcd.backlight();
-  lcd.setCursor(0,0);
-  lcd.print("Test");
+        pinMode();
+    }
 
-  pinMode(HC12_SET,OUTPUT);
-  digitalWrite(HC12_SET,LOW);
+    for (int i = 0; i < NUM_MCP; ++i)
+    {
+        cans[i].reset();
+        cans[i].setBitrate(CAN_500KBPS, MCP_20MHZ);
+        cans[i].setNormalMode();
+    }
 
-  Serial.begin(9600);
-  Serial.println("AT+C069");
+    // some sort of synchronization function in can manager to get SSRU on same cycle as VCU, see Scheduler.synchronize() for reference
+    can_manager.synchronize();
 
-  digitalWrite(HC12_SET,HIGH);
+    scheduler.addTask(McpIndex::Vcu, schedulerVcu, 1);
+    scheduler.addTask(McpIndex::Ssru, schedulerSsru, 1);
+    scheduler.addTask(McpIndex::Screen, schedulerScreen, 1);
+    scheduler.addTask(McpIndex::Radio, schedulerRadio, 1);
 }
 
-void loop() {
-    // put your main code here, to run repeatedly:
-
-    // wait for first time receive long frame from VCU, then wait 9ms and send a synchronization frame to both SSRUs
-    // make sure if not received (not ERROR::OK) then need retry, in case other systems not powered on / have issues
-
-
-
-
-    uint32_t tick = millis();
-
-    if(tick - lastLcdTick >= 100) {
-        lastLcdTick = tick;
-        
-        //update lcd
-    }
-
-
-    can_frame rx_msg;
-    if(can0.readMessage(&rx_msg) == MCP2515::ERROR_OK) {
-        //
-    }
+void loop()
+{
+    scheduler.update();
 }
