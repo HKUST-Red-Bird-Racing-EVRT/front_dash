@@ -12,20 +12,7 @@
 #include <LiquidCrystal_I2C.h>
 #include <Wire.h>
 #include <SPI.h>
-#include <avr/pgmspace.h>
-
-// Custom Char
-byte degCelsius[8] = { // degree celsius char
-  0b01000,
-  0b10100,
-  0b01000, 
-  0b00011, 
-  0b00100, 
-  0b00100, 
-  0b00100, 
-  0b00011  
-};
-
+static constexpr uint8_t RPM_PERIOD = 20;
 
 can_frame rx_frame;
 
@@ -40,9 +27,8 @@ can_frame rx_frame;
 #define HC12_SET_PIN 8 ///< @brief SET pin for HC-12 module (PB0)
 
 // Rotary Encoder Pins
-#define ENC_A A0 ///< @brief Pin for Rotary Encoder A output (PC0 - Analog 0)
-#define ENC_B A1 ///< @brief Pin for Rotary Encoder B output (PC1 - Analog 1)
-int lastStateA , lastStateB;
+#define ENC_A_PIN A0 ///< @brief Pin for Rotary Encoder A output (PC0 - Analog 0)
+#define ENC_B_PIN A1 ///< @brief Pin for Rotary Encoder B output (PC1 - Analog 1)
 
 // I2C Communication Pins
 #define SDA_PIN A4 ///< @brief SDA pin for I2C communication (PC4 - Analog 4)
@@ -68,7 +54,19 @@ MCP2515 can_vcu(CAN0_CS_PIN);
 MCP2515 can_ssru(CAN1_CS_PIN);
 static constexpr canid_t VCU_READ = 0x181; /**< Motor read CAN ID */
 
+// === even if unused, initialize ALL mcp2515 to make sure the CS pin is set up and they don't interfere with the SPI bus ===
+/**MCP2515 mcp2515_motor(CS_CAN_MOTOR); // motor CAN
+ *MCP2515 mcp2515_BMS(CS_CAN_BMS);     // BMS CAN
+ *MCP2515 mcp2515_DL(CS_CAN_DL);       // datalogger CAN
+ *
+ *#define mcp2515_motor mcp2515_DL
+ *#define mcp2515_BMS mcp2515_DL
 
+// #define mcp2515_DL mcp2515_motor
+
+ *constexpr uint8_t NUM_MCP = 3;
+ *MCP2515 MCPS[NUM_MCP] = {mcp2515_motor, mcp2515_BMS, mcp2515_DL};
+*/
 /** edit later for implementation of CAN of dash
  *
  * MCP2515 mcp2515_motor(CS_CAN_MOTOR);
@@ -81,16 +79,16 @@ static constexpr canid_t VCU_READ = 0x181; /**< Motor read CAN ID */
  *
  *
  *
+ *
+ *
+ * ENCODER A - PC0 (Analog 0)
+ * ENCODER B - PC1 (Analog 1)
+ *
+ * SDA - PC4 (Analog 4)
+ * SCL - PC5 (Analog 5)
+ * CAN0 CS - PB2 (Digital 10)
+ * CAN1 CS - PB1 (Digital 9)
  */
- 
-#define ENCODER A - PC0 (Analog 0)
-#define ENCODER B - PC1 (Analog 1)
-
-#define SDA - PC4 (Analog 4)
-#define SCL - PC5 (Analog 5)
-#define CAN0 CS - PB2 (Digital 10)
-#define CAN1 CS - PB1 (Digital 9)
- 
 
 /**
  * @brief The Arduino setup function. This function runs once when the sketch starts.
@@ -110,13 +108,12 @@ uint8_t write_counter = 0;
 void setup()
 {
 	// Initialize Serial communication at 9600 baud rate for debugging output.
-	Serial.begin(9600);
+	Serial.begin(115200);
 	lcd.begin(20, 4);
 
 	can_vcu.reset();
 	can_vcu.setBitrate(CAN_500KBPS, MCP_20MHZ);
 	can_vcu.setNormalMode();
-	Serial.write("working");
 
 	lcd.print("CAN Initialized");
 	delay(1000);
@@ -126,28 +123,21 @@ void setup()
 	{
 		;
 	}
-	pinMode(HC12_SET_PIN,OUTPUT);
-    digitalWrite(HC12_SET_PIN,LOW);
-    Serial.println("AT+C069");
 
-    digitalWrite(HC12_SET_PIN,HIGH);
-	
-
+	// Iterate through the array of GPIO pins, setting each as an OUTPUT and ensuring it's LOW.
+	for (int i = 0; i < numGpioPins; i++)
+	{
+		//pinMode(gpioPins[i], OUTPUT);
+	}
 	lcd.init();
 	Serial.println("LCD init done");
 	delay(100);
 	lcd.backlight();
-	lcd.createChar(0, degCelsius);
 	Serial.println("Backlight on");
 	delay(100);
 	lcd.setCursor(0, 0);
 	lcd.print("Ready");
 	delay(500);
-
-	pinMode(ENC_A, INPUT_PULLUP);
-    pinMode(ENC_B, INPUT_PULLUP);
-    lastStateA = digitalRead(ENC_A);
-	lastStateB = digitalRead(ENC_B);
 }
 
 /**
@@ -179,42 +169,32 @@ void loop()
 	lcd.setCursor(0, 3);
 	lcd.print(millis());
 
-	lcd.setCursor(8,1);
-	lcd.write(0);
-	
+	MCP2515::ERROR read_state = can_vcu.readMessage(&rx_frame);
 
-
-	MCP2515::ERROR read_state = can_vcu.readMessage(&rx_frame); //later detect encoder input to swap page from speed+temp into debug page
-//page selector is rotating 
-
-	Serial.write("test2");
-	Serial.write('\n');
-
-
-
-	int currentStateA = digitalRead(ENC_A);  ///< @brief read high/low of enc A & B
-	int currentStateB = digitalRead(ENC_B);
+	Serial.write("State: ");
+	Serial.write(static_cast<char>(read_state)+'a');
+	Serial.write("\n");
 
 	if (read_state == MCP2515::ERROR_OK)
 	{
-		//Serial.write(rx_frame.can_id+'0');
-		//Serial.write("\t DLC: ");
-	//	Serial.write(rx_frame.can_dlc+'0');
-	//	Serial.write("\t Data: ");
-	//	for (uint8_t i = 0; i < 8; ++i)
-	//	{
-	//		Serial.write(rx_frame.data[i]+'0');
-	//		Serial.write("\t");
-	//	}
-
-
+		Serial.write("ID: ");
+		Serial.write(rx_frame.can_id+'0');
+		Serial.write("\t DLC: ");
+		Serial.write(rx_frame.can_dlc+'0');
+		Serial.write("\t Data: ");
+		for (int i = 0; i < 8; ++i)
+		{
+			Serial.write(rx_frame.data[i]+'0');
+			Serial.write("\t");
+		}
+		Serial.write("\n");
 
 		lcd.setCursor(0, 0);
-		lcd.print("Temp:        ");
+		lcd.print("ID:        ");
 		lcd.setCursor(3, 0);
-		lcd.print(rx_frame.can_id,HEX);
+		lcd.print(rx_frame.can_id, HEX);
 		lcd.setCursor(0, 1);
-	    lcd.print("SPD:");
+		lcd.print("DLC:");
 		lcd.print(rx_frame.can_dlc);
 		lcd.setCursor(0, 2);
 		for (uint8_t i = 0; i < rx_frame.can_dlc && i < 8; i++)
@@ -222,8 +202,7 @@ void loop()
 			if (rx_frame.data[i] < 0x10)
 				lcd.print("0");
 			lcd.print(rx_frame.data[i], HEX);
+			lcd.print(" ");
 		}
-		Serial.print("CAN_ID:");
-        Serial.println(rx_frame.can_id, HEX);
 	}
 }
