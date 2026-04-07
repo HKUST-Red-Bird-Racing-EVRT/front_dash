@@ -1,9 +1,6 @@
 /**
  * @file main.cpp
- * @brief This file contains the GPIO testing code for the Gen6 Dash project.
- *        It is designed to cycle through General Purpose Input/Output
- *        pins on the ATmega328P microcontroller, setting them HIGH and LOW.
- *        This can be observed with a multimeter or an LED connected to the respective pins
+ * @brief This file contains the main functions for DASH of gen6 car
  * @note This code is intended for testing purposes only.
  */
 
@@ -63,6 +60,9 @@ int lastStateA , lastStateB;
 const int gpioPins[] = {
 	GPIO_1_PIN, GPIO_2_PIN, GPIO_3_PIN, GPIO_4_PIN,
 	GPIO_5_PIN, GPIO_6_PIN, GPIO_7_PIN, GPIO_8_PIN};
+/**
+ * @brief MCP2515 functions and PINS
+ */
 MCP2515 can_vcu(CAN0_CS_PIN);
 MCP2515 can_ssru(CAN1_CS_PIN);
 static constexpr canid_t VCU_READ = 0x181; /**< Motor read CAN ID */
@@ -82,9 +82,8 @@ static constexpr canid_t VCU_READ = 0x181; /**< Motor read CAN ID */
  *
  */
 /**
- * @brief The Arduino setup function. This function runs once when the sketch starts.
- * @details It initializes serial communication for debugging and configures all defined
- *          GPIO pins as OUTPUTs, setting their initial state to LOW.
+ * @brief Arduino setup function.
+ * @details It initializes serial communication
  */
 const int numGpioPins = sizeof(gpioPins) / sizeof(gpioPins[0]);
 
@@ -141,10 +140,8 @@ void setup()
 }
 
 /**
- * @brief The Arduino loop function. This function runs repeatedly after setup().
- * @details It continuously cycles through each defined GPIO pin, setting it HIGH for 1 second,
- *          then LOW for 0.5 seconds. Serial messages indicate the current pin being tested
- *          and its state. A 2-second delay is introduced after each complete cycle.
+ * @brief The Arduino loop function.
+ * @details 
  */
 void loop()
 {
