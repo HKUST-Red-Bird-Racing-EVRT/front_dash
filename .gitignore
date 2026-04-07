@@ -4,9 +4,15 @@
 # build files, remove else build error, no need sync anyway
 .pio/build/
 .pio/libdeps/
+.pio/
+gen6 dash/.pio
 
 # vscode, has absolute file location
 .vscode/
 
 # Ignore compiled documentation
 docs
+
+#test things
+src/(lcdtest)main.cpp.old
+src/(gpiotest)main.cpp.old

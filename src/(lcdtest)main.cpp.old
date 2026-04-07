@@ -1,17 +1,13 @@
 /**
  * @file main.cpp
- * @brief This file contains the GPIO testing code for the Gen6 Dash project.
- *        It is designed to cycle through General Purpose Input/Output
- *        pins on the ATmega328P microcontroller, setting them HIGH and LOW.
- *        This can be observed with a multimeter or an LED connected to the respective pins
+ * @brief This file contains the LCD testing code for the Gen6 Dash project.
+ *        It allows output of CAN signals to the lcd
  * @note This code is intended for testing purposes only.
  */
 
 #include <Arduino.h>
 #include <mcp2515.h>
 #include <LiquidCrystal_I2C.h>
-#include <Wire.h>
-#include <SPI.h>
 static constexpr uint8_t RPM_PERIOD = 20;
 
 can_frame rx_frame;
@@ -148,23 +144,6 @@ void setup()
  */
 void loop()
 {
-	/*
-	// Cycle through each GPIO pin, setting it HIGH, waiting, then LOW.
-	for (int i = 0; i < numGpioPins; i++)
-	{
-		Serial.print(gpioPins[i]);
-		digitalWrite(gpioPins[i], HIGH);
-	}
-	delay(1000); // Wait for 1 second to observe the HIGH state.
-	for (int i = 0; i < numGpioPins; i++)
-	{
-
-		Serial.print(gpioPins[i]);
-		digitalWrite(gpioPins[i], LOW);
-	}
-	delay(500); // Wait for 0.5 seconds to observe the LOW state.
-
-	*/
 
 	lcd.setCursor(0, 3);
 	lcd.print(millis());

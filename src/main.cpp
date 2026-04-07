@@ -12,7 +12,6 @@
 #include <LiquidCrystal_I2C.h>
 #include <Wire.h>
 #include <SPI.h>
-#include <avr/pgmspace.h>
 
 // Custom Char
 byte degCelsius[8] = { // degree celsius char
@@ -35,28 +34,28 @@ can_frame rx_frame;
 #define CAN1_CS_PIN PIN_PB1 ///< @brief Chip Select pin for CAN Controller 1 (PB1)
 
 // HC-12 Wireless Serial Communication Module Pins
-#define HC12_RX_PIN 0  ///< @brief Receive pin for HC-12 module (PD0 - Serial RX)
-#define HC12_TX_PIN 1  ///< @brief Transmit pin for HC-12 module (PD1 - Serial TX)
-#define HC12_SET_PIN 8 ///< @brief SET pin for HC-12 module (PB0)
+#define HC12_RX_PIN PIN_PD0  ///< @brief Receive pin for HC-12 module (PD0 - Serial RX)
+#define HC12_TX_PIN PIN_PD1  ///< @brief Transmit pin for HC-12 module (PD1 - Serial TX)
+#define HC12_SET_PIN PIN_PB0 ///< @brief SET pin for HC-12 module (PB0)
 
 // Rotary Encoder Pins
-#define ENC_A A0 ///< @brief Pin for Rotary Encoder A output (PC0 - Analog 0)
-#define ENC_B A1 ///< @brief Pin for Rotary Encoder B output (PC1 - Analog 1)
+#define ENC_A PIN_PC0 ///< @brief Pin for Rotary Encoder A output (PC0 - Analog 0)
+#define ENC_B PIN_PC1 ///< @brief Pin for Rotary Encoder B output (PC1 - Analog 1)
 int lastStateA , lastStateB;
 
 // I2C Communication Pins
-#define SDA_PIN A4 ///< @brief SDA pin for I2C communication (PC4 - Analog 4)
-#define SCL_PIN A5 ///< @brief SCL pin for I2C communication (PC5 - Analog 5)
+#define SDA_PIN PIN_PC4 ///< @brief SDA pin for I2C communication (PC4 - Analog 4)
+#define SCL_PIN PIN_PC5 ///< @brief SCL pin for I2C communication (PC5 - Analog 5)
 
 // General Purpose Input/Output (GPIO) Pins
-#define GPIO_1_PIN A2 ///< @brief General Purpose I/O Pin 1 (PC2 - Analog 2)
-#define GPIO_2_PIN A3 ///< @brief General Purpose I/O Pin 2 (PC3 - Analog 3)
-#define GPIO_3_PIN 7  ///< @brief General Purpose I/O Pin 3 (PD7 - Digital 7)
-#define GPIO_4_PIN 2  ///< @brief General Purpose I/O Pin 4 (PD2 - Digital 2)
-#define GPIO_5_PIN 3  ///< @brief General Purpose I/O Pin 5 (PD3 - Digital 3)
-#define GPIO_6_PIN 4  ///< @brief General Purpose I/O Pin 6 (PD4 - Digital 4)
-#define GPIO_7_PIN 5  ///< @brief General Purpose I/O Pin 7 (PD5 - Digital 5)
-#define GPIO_8_PIN 6  ///< @brief General Purpose I/O Pin 8 (PD6 - Digital 6)
+#define GPIO_1_PIN PIN_PC2 ///< @brief General Purpose I/O Pin 1 (PC2 - Analog 2)
+#define GPIO_2_PIN PIN_PC3 ///< @brief General Purpose I/O Pin 2 (PC3 - Analog 3)
+#define GPIO_3_PIN PIN_PD7  ///< @brief General Purpose I/O Pin 3 (PD7 - Digital 7)
+#define GPIO_4_PIN PIN_PD2  ///< @brief General Purpose I/O Pin 4 (PD2 - Digital 2)
+#define GPIO_5_PIN PIN_PD3  ///< @brief General Purpose I/O Pin 5 (PD3 - Digital 3)
+#define GPIO_6_PIN PIN_PD4  ///< @brief General Purpose I/O Pin 6 (PD4 - Digital 4)
+#define GPIO_7_PIN PIN_PD5  ///< @brief General Purpose I/O Pin 7 (PD5 - Digital 5)
+#define GPIO_8_PIN PIN_PD6  ///< @brief General Purpose I/O Pin 8 (PD6 - Digital 6)
 
 /**
  * @brief An array containing all the GPIO pins to be tested.
@@ -82,16 +81,6 @@ static constexpr canid_t VCU_READ = 0x181; /**< Motor read CAN ID */
  *
  *
  */
- 
-#define ENCODER A - PC0 (Analog 0)
-#define ENCODER B - PC1 (Analog 1)
-
-#define SDA - PC4 (Analog 4)
-#define SCL - PC5 (Analog 5)
-#define CAN0 CS - PB2 (Digital 10)
-#define CAN1 CS - PB1 (Digital 9)
- 
-
 /**
  * @brief The Arduino setup function. This function runs once when the sketch starts.
  * @details It initializes serial communication for debugging and configures all defined
@@ -109,7 +98,8 @@ uint8_t write_counter = 0;
 
 void setup()
 {
-	// Initialize Serial communication at 9600 baud rate for debugging output.
+	// Initialize Serial communication at 9600 baud rate. 
+    // READ full documentations for how this number is calculated to achieve 500m at maximum rates.
 	Serial.begin(9600);
 	lcd.begin(20, 4);
 
@@ -144,8 +134,8 @@ void setup()
 	lcd.print("Ready");
 	delay(500);
 
-	pinMode(ENC_A, INPUT_PULLUP);
-    pinMode(ENC_B, INPUT_PULLUP);
+	pinMode(ENC_A, INPUT);
+    pinMode(ENC_B, INPUT);
     lastStateA = digitalRead(ENC_A);
 	lastStateB = digitalRead(ENC_B);
 }
