@@ -114,17 +114,44 @@ void loop()
         uint8_t output = 0b10100000;
         switch (rx_frame.can_id) //20 20 200 ms counttime
         {
-            case 0x700:
+            case 0x700:   //vcu pedals
                 break;
-            case 0x701:
+            case 0x701:   //vcu motors
                 output += 1;
                 break;
-            case 0x710:
+            case 0x710:  //vcu bms
                 output += 2;
                 break;
-            // case 0x720:TODO
-            default:
+            case 0x720:   //car state?
                 output += 3;
+                break;
+            //continue add case according to list
+            case 0x730:   //front
+                output += 4;
+                break;
+            case 0x731:  //front
+                output += 5;
+                break;
+            case 0x740:  //front
+                output += 6;
+                break;
+            case 0x750:  //rear pot
+                output += 7;
+                break;
+            case 0x751:  //rear imu
+                output += 8;
+                break;
+            case 0x752:  //rear 
+                output += 9;
+                break;
+            case 0x753:  //rear
+                output += 10;
+                break;
+            case 0x760:  //cooling
+                output += 11;
+                break;
+            default:
+                output += 15; //not supposed to happen
         }
         Serial.write(output);
         // Serial.write(rx_frame.can_id >> 8 & 0xFF);
