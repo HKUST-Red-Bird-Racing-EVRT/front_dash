@@ -101,8 +101,8 @@ uint8_t write_counter = 0;
 MCP2515 cans[NUM_MCP] = {can_vcu, can_ssru};
 void setup()
 {
-    Serial.begin(9600);
-    HC12.begin(9600);
+    Serial.begin(115200);
+    HC12.begin(115200);
     lcd.begin(20, 4);
     lcd.clear();
     lcd.init();
