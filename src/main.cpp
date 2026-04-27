@@ -12,37 +12,33 @@
 
 // Custom Char
 byte degCelsius[8] = { // degree celsius char
-    0b01000,
-    0b10100,
-    0b01000,
-    0b00011,
-    0b00100,
-    0b00100,
-    0b00100,
-    0b00011};
+	0b01000,
+	0b10100,
+	0b01000,
+	0b00011,
+	0b00100,
+	0b00100,
+	0b00100,
+	0b00011};
 
 can_frame rx_frame;
 int message_count = 0;
 uint8_t pot_buffer[8] = {0}; // Buffer for merged POT data (0x730 + 0x750)
 bool pot_730_ready = false;
 bool pot_750_ready = false;
-uint16_t motor_rpm,motor_temp= 0; // Variable to store motor stuff
+
+int16_t torque_val, motor_rpm = 0;
+uint16_t motor_warn, motor_error = 0; // Variable to store motor stuff
 
 // Define pin assignment using actual Arduino pin numbers
 // SPI Pins for CAN Controllers (MCP2515)
-#define NUM_MCP 2       ///< @brief Number of MCP2515 controllers
+#define NUM_MCP 2		///< @brief Number of MCP2515 controllers
 #define CAN0_CS PIN_PB2 ///< @brief Chip Select pin for CAN Controller 0 (PB2/SS)
 #define CAN1_CS PIN_PB1 ///< @brief Chip Select pin for CAN Controller 1 (PB1)
 
-// HC-12 Wireless Serial Communication Module Pins
-#define HC12_RX PIN_PD0  ///< @brief Receive pin for HC-12 module (PD0 - Serial RX)
-#define HC12_TX PIN_PD1  ///< @brief Transmit pin for HC-12 module (PD1 - Serial TX)
-#define HC12_SET PIN_PB0 ///< @brief SET pin for HC-12 module (PB0)
-SoftwareSerial HC12(PIN_PD1, PIN_PD0);
-
 // Rotary Encoder Pins
-//#define ENC_A PIN_PC0 ///< @brief Pin for Rotary Encoder A output (PC0 - Analog 0)
-//#define ENC_B PIN_PC1 ///< @brief Pin for Rotary Encoder B output (PC1 - Analog 1)
+// #define ENC_A PIN_PC0 ///< @brief Pin for Rotary Encoder A output (PC0 - Analog 0)
+// #define ENC_B PIN_PC1 ///< @brief Pin for Rotary Encoder B output (PC1 - Analog 1)
 bool test_mode = true;
 int test_encA = 1, test_encB = 0;
 int lastStateA, lastStateB;
@@ -66,8 +62,8 @@ int lastChange = 0;
  * @brief An array containing all the GPIO pins to be tested.
  */
 const int gpioPins[] = {
-    GPIO_1, GPIO_2, GPIO_3, GPIO_4,
-    GPIO_5, GPIO_6, GPIO_7, GPIO_8};
+	GPIO_1, GPIO_2, GPIO_3, GPIO_4,
+	GPIO_5, GPIO_6, GPIO_7, GPIO_8};
 const int numGpioPins = sizeof(gpioPins) / sizeof(gpioPins[0]);
 /**
  * @brief MCP2515 functions and PINS
@@ -101,114 +97,179 @@ uint8_t write_counter = 0;
 MCP2515 cans[NUM_MCP] = {can_vcu, can_ssru};
 void setup()
 {
-    Serial.begin(115200);
-    HC12.begin(115200);
-    lcd.begin(20, 4);
-    lcd.clear();
-    lcd.init();
-    lcd.backlight();
-    for (int i = 0; i < NUM_MCP; ++i)
-    {
-        cans[i].reset();
-        cans[i].setBitrate(CAN_500KBPS, MCP_20MHZ);
-        cans[i].setNormalMode();
-    }
-
-    while (!Serial)
-    {
-        ;
-    }
+	Serial.begin(115200);
+	lcd.begin(20, 4);
+	lcd.clear();
+	lcd.init();
+	lcd.backlight();
+	lcd.setCursor(0, 0);
+	lcd.print("Dash Init ...");
+	lcd.setCursor(0, 1);
+	lcd.print("LCD ... OK");
+	lcd.setCursor(0, 2);
+	lcd.print("CAN ... ");
+	for (int i = 0; i < NUM_MCP; ++i)
+	{
+		cans[i].reset();
+		cans[i].setBitrate(CAN_500KBPS, MCP_20MHZ);
+		cans[i].setNormalMode();
+	}
+	lcd.print("OK");
+	lcd.setCursor(0, 3);
+	lcd.print("Serial ... ");
+	while (!Serial)
+	{
+		;
+	}
+	lcd.print("OK");
+	delay(1000);
+	lcd.clear();
+	lcd.setCursor(0, 0);
+	lcd.print("Dash Ready!");
+	delay(1000);
+	lcd.clear();
+	lcd.setCursor(0, 0);
+	lcd.print("Throttle: ");
+	lcd.setCursor(0, 1);
+	lcd.print("Motor RPM: ");
+	lcd.setCursor(0, 2);
+	lcd.print("Motor Warn: ");
+	lcd.setCursor(0, 3);
+	lcd.print("Motor Error: ");
 }
 void loop()
 {
-    int encA, encB;
-    
-    if (test_mode) {
-        encA = test_encA;  // test values
-        encB = test_encB;
-    } else {
-        encA = digitalRead(PIN_PC0);  // actual pins
-        encB = digitalRead(PIN_PC1);
-    }
-    lcd.setCursor(0, 3);
-    lcd.print(millis());
-    MCP2515::ERROR read_state = can_vcu.readMessage(&rx_frame);
-    if (read_state == MCP2515::ERROR_OK)
-    {
-        //if (test_encA==1){
+	/*    int encA, encB;
 
-            uint8_t output = 0b10100000;
-            switch (rx_frame.can_id) // 20 20 200 ms counttime
-            {
-            case 0x700: // vcu pedals
-                break;
-            case 0x701: // vcu motors
-            // Extract motor RPM from bytes 1-2
-                motor_rpm = (rx_frame.data[2] << 8) | rx_frame.data[1];
-                output += 1;
-                break;
-            case 0x710: // vcu bms
-                output += 2;
-                break;
-            case 0x730: // front pot
-                memcpy(&pot_buffer[0], rx_frame.data, 4);
-                pot_730_ready = true;
-                break;
-            case 0x740: // front
-                output += 5;
-                break;
-            case 0x750: // rear pot
-                memcpy(&pot_buffer[4], rx_frame.data, 4);
-                pot_750_ready = true;
-                break;
-            case 0x760: // cooling
-                output += 8;
-                break;
-            default:
-                output += 15; // not supposed to happen
-            }
-            if (pot_730_ready && pot_750_ready)
-            {
-                output += 3;
-                Serial.write(output);
-                Serial.write(pot_buffer, 8);
-                pot_730_ready = false;
-                pot_750_ready = false;
-            }
-            else
-            {
-                Serial.write(output);
-                Serial.write(rx_frame.data, 8);
-            }
-        
-            lcd.setCursor(0, 0);
-            lcd.print("ID:        ");
-            lcd.setCursor(3, 0);
-            lcd.print(rx_frame.can_id, HEX);
-            lcd.setCursor(0, 2);
-            for (uint8_t i = 0; i < rx_frame.can_dlc && i < 8; i++){
-            if (rx_frame.data[i] < 0x10)
-                lcd.print("0");
-            lcd.print(rx_frame.data[i], HEX);
-        }}
-    //    else if (test_encB==1){
-            lcd.clear();
-            lcd.setCursor(1,1);
-            lcd.print("encoder works");
-            lcd.setCursor(0, 0);
-            lcd.print("RPM: ");
-            lcd.print(motor_rpm,HEX);
-            delay(100);
-            lcd.clear();
-        }
-      //**  if (test_mode) {
-      //
-        //    if (millis() - lastChange >= 5000) {
-          //      if (test_encA == 1 && test_encB == 0) {
-            //        test_encA = 0;
-              //      test_encB = 1;  // Switch to second path
-                //} else {
-                  //  test_encA = 1;
-                    //test_encB = 0;  // Switch to first path
-                //}
-                //lastChange = millis();}
+	if (test_mode) {
+		encA = test_encA;  // test values
+		encB = test_encB;
+		} else {
+			encA = digitalRead(PIN_PC0);  // actual pins
+			encB = digitalRead(PIN_PC1);
+		}
+		lcd.setCursor(0, 3);
+		lcd.print(millis());
+		*/
+	MCP2515::ERROR read_state = can_vcu.readMessage(&rx_frame);
+	if (read_state == MCP2515::ERROR_OK)
+	{
+		// if (test_encA==1){
+
+		uint8_t output = 0b10100000;
+		switch (rx_frame.can_id) // 20 20 200 ms counttime
+		{
+		case 0x700: // vcu pedals
+			break;
+		case 0x701: // vcu motors
+			torque_val = (rx_frame.data[1] << 8) | rx_frame.data[0];
+			motor_rpm = (rx_frame.data[3] << 8) | rx_frame.data[2];
+			motor_warn = (rx_frame.data[5] << 8) | rx_frame.data[4];
+			motor_error = (rx_frame.data[7] << 8) | rx_frame.data[6];
+			output += 1;
+			break;
+		case 0x710: // vcu bms
+			output += 2;
+			break;
+		case 0x730: // front pot
+			memcpy(&pot_buffer[0], rx_frame.data, 4);
+			pot_730_ready = true;
+			break;
+		case 0x740: // front
+			output += 5;
+			break;
+		case 0x750: // rear pot
+			memcpy(&pot_buffer[4], rx_frame.data, 4);
+			pot_750_ready = true;
+			break;
+		case 0x760: // cooling
+			output += 8;
+			break;
+		default:
+			output += 15; // not supposed to happen
+		}
+		if (pot_730_ready && pot_750_ready)
+		{
+			output += 3;
+			Serial.write(output);
+			Serial.write(pot_buffer, 8);
+			pot_730_ready = false;
+			pot_750_ready = false;
+		}
+		else
+		{
+			Serial.write(output);
+			Serial.write(rx_frame.data, 8);
+		}
+		/*
+
+		lcd.setCursor(0, 0);
+		lcd.print("ID:        ");
+		lcd.setCursor(3, 0);
+		lcd.print(rx_frame.can_id, HEX);
+		lcd.setCursor(0, 2);
+		for (uint8_t i = 0; i < rx_frame.can_dlc && i < 8; i++){
+			if (rx_frame.data[i] < 0x10)
+			lcd.print("0");
+			lcd.print(rx_frame.data[i], HEX);
+			}}
+			//    else if (test_encB==1){
+				lcd.clear();
+				lcd.setCursor(1,1);
+				lcd.print("encoder works");
+				lcd.setCursor(0, 0);
+				lcd.print("RPM: ");
+				lcd.print(motor_rpm,HEX);
+				delay(100);
+				lcd.clear();
+				}
+				//**  if (test_mode) {
+					//
+					//    if (millis() - lastChange >= 5000) {
+						//      if (test_encA == 1 && test_encB == 0) {
+							//        test_encA = 0;
+							//      test_encB = 1;  // Switch to second path
+			//} else {
+			  //  test_encA = 1;
+			  //test_encB = 0;  // Switch to first path
+			  //}
+			  //lastChange = millis();}
+			  */
+	}
+	if (millis() - lastLcdTick >= 75)
+	{
+		static uint8_t lcd_update_state = 0;
+		switch (lcd_update_state)
+		{
+			case 0:
+				lcd.setCursor(11, 0);
+				if (torque_val < 0)
+				{
+					lcd.print("-");
+				}
+				else
+				{
+					lcd.print("+");
+				}
+				lcd.print(torque_val/328);
+				lcd.setCursor(15, 0);
+				lcd.print("%");
+				break;
+			case 1:
+				lcd.setCursor(12, 1);
+				lcd.print((int32_t)motor_rpm*6000/32767);
+				lcd.setCursor(16, 1);
+				lcd.print("RPM");
+				break;
+			case 2:
+				lcd.setCursor(13, 2);
+				lcd.print(motor_warn, HEX);
+				break;
+			case 3:
+				lcd.setCursor(14, 3);
+				lcd.print(motor_error, HEX);
+				break;
+		}
+		lcd_update_state = (lcd_update_state + 1) % 3;
+	}
+}
