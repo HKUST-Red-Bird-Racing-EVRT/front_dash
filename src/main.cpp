@@ -122,20 +122,22 @@ void setup()
 		;
 	}
 	lcd.print("OK");
-	delay(1000);
+	delay(2000);
 	lcd.clear();
 	lcd.setCursor(0, 0);
 	lcd.print("Dash Ready!");
-	delay(1000);
+	delay(2000);
 	lcd.clear();
 	lcd.setCursor(0, 0);
 	lcd.print("Throttle: ");
 	lcd.setCursor(0, 1);
 	lcd.print("Motor RPM: ");
+	lcd.setCursor(15, 1);
+	lcd.print("RPM");
 	lcd.setCursor(0, 2);
-	lcd.print("Motor Warn: ");
+	lcd.print("Motor Warn: 0x");
 	lcd.setCursor(0, 3);
-	lcd.print("Motor Error: ");
+	lcd.print("Motor Error: 0x");
 }
 void loop()
 {
@@ -241,35 +243,39 @@ void loop()
 		static uint8_t lcd_update_state = 0;
 		switch (lcd_update_state)
 		{
-			case 0:
-				lcd.setCursor(11, 0);
-				if (torque_val < 0)
-				{
-					lcd.print("-");
-				}
-				else
-				{
-					lcd.print("+");
-				}
-				lcd.print(torque_val/328);
-				lcd.setCursor(15, 0);
-				lcd.print("%");
-				break;
-			case 1:
-				lcd.setCursor(12, 1);
-				lcd.print((int32_t)motor_rpm*6000/32767);
-				lcd.setCursor(16, 1);
-				lcd.print("RPM");
-				break;
-			case 2:
-				lcd.setCursor(13, 2);
-				lcd.print(motor_warn, HEX);
-				break;
-			case 3:
-				lcd.setCursor(14, 3);
-				lcd.print(motor_error, HEX);
-				break;
+		case 0:
+			lcd.setCursor(10, 0);
+			if (torque_val < 0)
+			{
+				lcd.print("-   ");
+			}
+			else
+			{
+				lcd.print("+   ");
+			}
+			lcd.setCursor(11, 0);
+			lcd.print(abs(torque_val) / 327);
+			lcd.setCursor(14, 0);
+			lcd.print("%");
+			break;
+		case 1:
+			lcd.setCursor(11, 1);
+			lcd.print((int32_t)motor_rpm * 6000 / 32767);
+			break;
+		case 2:
+			lcd.setCursor(14, 2);
+			lcd.print("00");
+			lcd.setCursor(14, 2);
+			lcd.print(motor_warn, HEX);
+			break;
+		case 3:
+			lcd.setCursor(15, 3);
+			lcd.print("00");
+			lcd.setCursor(15, 3);
+			lcd.print(motor_error, HEX);
+			break;
 		}
 		lcd_update_state = (lcd_update_state + 1) % 3;
+		lastLcdTick = millis();
 	}
 }
