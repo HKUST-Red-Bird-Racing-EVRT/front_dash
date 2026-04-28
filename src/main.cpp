@@ -29,6 +29,41 @@ bool pot_750_ready = false;
 
 int16_t torque_val, motor_rpm = 0;
 uint16_t motor_warn, motor_error = 0; // Variable to store motor stuff
+uint32_t odometer_integral = 0;		  // Variable to store integral of RPM for odometer calculation
+
+namespace lcd_update
+{
+	constexpr uint8_t cycle_rate = 4; // lcd hz
+	constexpr uint8_t update_items = 5;
+	constexpr uint8_t update_count = cycle_rate * update_items;
+
+	static_assert((1000 / update_count) * update_count == 1000, "update_count must be a factor of 1000 to avoid truncation.");
+
+	constexpr uint8_t update_interval_ms = 1000 / update_count;
+}
+namespace rpm_calc
+{
+	constexpr uint8_t GEAR_RATIO_NUMERATOR = 50;   /**< Gear ratio numerator of the drivetrain. */
+	constexpr uint8_t GEAR_RATIO_DENOMINATOR = 13; /**< Gear ratio denominator of the drivetrain. */
+
+	// === Calculation for RPM threshold ===
+	constexpr uint8_t WHEEL_DIAMETER_INCH = 13; /**< Wheel diameter in inches. */
+	constexpr uint16_t MAX_MOTOR_RPM = 6000;	/**< Maximum motor RPM. */
+	constexpr uint16_t MAX_TORQUE_VAL = 32767;	/**< Maximum torque value for motor controller. */
+
+	constexpr uint16_t INCH_PER_KM = 39370;					  /**< Inches per kilometer. */
+	constexpr uint8_t MINUTES_PER_HOUR = 60;				  /**< Minutes per hour. */
+	constexpr double PI_ = 3.1415926535897932384626433832795; /**< Value of pi, unnamed to avoid clashing with Arduino.h's definition. */
+
+	/** Divide by this constant to get  */
+	constexpr uint16_t RPM_TO_KMH_DIVISOR = (double)MAX_TORQUE_VAL / MAX_MOTOR_RPM /
+												WHEEL_DIAMETER_INCH / PI_ * INCH_PER_KM / MINUTES_PER_HOUR / GEAR_RATIO_DENOMINATOR * GEAR_RATIO_NUMERATOR +
+											0.5f;
+	constexpr uint16_t RPM_INTEGRAL_TO_KM_DIVISOR = (double)MAX_TORQUE_VAL / MAX_MOTOR_RPM /
+														WHEEL_DIAMETER_INCH / PI_ * INCH_PER_KM / MINUTES_PER_HOUR / GEAR_RATIO_DENOMINATOR * GEAR_RATIO_NUMERATOR * lcd_update::cycle_rate +
+													0.5f;
+
+}
 
 // Define pin assignment using actual Arduino pin numbers
 // SPI Pins for CAN Controllers (MCP2515)
@@ -128,16 +163,18 @@ void setup()
 	lcd.print("Dash Ready!");
 	delay(2000);
 	lcd.clear();
-	lcd.setCursor(0, 0);
-	lcd.print("Throttle: ");
+	lcd.setCursor(3, 0);
+	lcd.print(" kmh");
+	lcd.setCursor(16, 1);
+	lcd.print(" rpm");
 	lcd.setCursor(0, 1);
-	lcd.print("Motor RPM: ");
-	lcd.setCursor(15, 1);
-	lcd.print("RPM");
+	lcd.print("Throttle: ");
+	lcd.setCursor(14, 1);
+	lcd.print("%");
 	lcd.setCursor(0, 2);
-	lcd.print("Motor Warn: 0x");
+	lcd.print("MCU Warn/Err: 0x");
 	lcd.setCursor(0, 3);
-	lcd.print("Motor Error: 0x");
+	lcd.print("Odometer:         km");
 }
 void loop()
 {
@@ -238,44 +275,101 @@ void loop()
 			  //lastChange = millis();}
 			  */
 	}
-	if (millis() - lastLcdTick >= 75)
+	if (millis() - lastLcdTick >= lcd_update::update_interval_ms)
 	{
 		static uint8_t lcd_update_state = 0;
 		switch (lcd_update_state)
 		{
 		case 0:
+			// speed
+			lcd.setCursor(0, 0);
+			uint8_t speed = motor_rpm / rpm_calc::RPM_TO_KMH_DIVISOR;
+			if (speed < 100)
+			{
+				lcd.print(" ");
+				if (speed < 10)
+				{
+					lcd.print(" ");
+				}
+			}
+			lcd.print(speed);
+			break;
+		case 1:
+			// motor rpm
+			lcd.setCursor(12, 0);
+			uint16_t rpm = motor_rpm * 6000 / 32767;
+			if (rpm < 1000)
+			{
+				lcd.print(" ");
+				if (rpm < 100)
+				{
+					lcd.print(" ");
+					if (rpm < 10)
+					{
+						lcd.print(" ");
+					}
+				}
+			}
+			lcd.print(rpm);
+			break;
+		case 2:
+			// throttle percentage
 			lcd.setCursor(10, 0);
+			uint8_t throttle_percent = abs(torque_val) * 100 / rpm_calc::MAX_TORQUE_VAL;
+			if (throttle_percent < 100)
+			{
+				lcd.print(" ");
+				if (throttle_percent < 10)
+				{
+					lcd.print(" ");
+				}
+			}
 			if (torque_val < 0)
 			{
-				lcd.print("-   ");
+				lcd.print("-");
 			}
 			else
 			{
-				lcd.print("+   ");
+				lcd.print("+");
 			}
-			lcd.setCursor(11, 0);
-			lcd.print(abs(torque_val) / 327);
-			lcd.setCursor(14, 0);
-			lcd.print("%");
-			break;
-		case 1:
-			lcd.setCursor(11, 1);
-			lcd.print((int32_t)motor_rpm * 6000 / 32767);
-			break;
-		case 2:
-			lcd.setCursor(14, 2);
-			lcd.print("00");
-			lcd.setCursor(14, 2);
-			lcd.print(motor_warn, HEX);
+			lcd.print(throttle_percent);
 			break;
 		case 3:
-			lcd.setCursor(15, 3);
+			// motor warn/error
+			lcd.setCursor(16, 2);
 			lcd.print("00");
-			lcd.setCursor(15, 3);
+			lcd.setCursor(16, 2);
+			lcd.print(motor_warn, HEX);
+			lcd.setCursor(18, 2);
+			lcd.print("00");
+			lcd.setCursor(18, 2);
 			lcd.print(motor_error, HEX);
 			break;
+		case 4:
+			// odometer
+			odometer_integral += motor_rpm;
+			lcd.setCursor(12, 3);
+			uint32_t odometer = odometer_integral / rpm_calc::RPM_INTEGRAL_TO_KM_DIVISOR;
+			if (odometer < 10000)
+			{
+				lcd.print(" ");
+				if (odometer < 1000)
+				{
+					lcd.print(" ");
+					if (odometer < 100)
+					{
+						lcd.print(" ");
+						if (odometer < 10)
+						{
+							lcd.print(" ");
+						}
+					}
+				}
+			}
+			lcd.print(odometer);
+			break;
 		}
-		lcd_update_state = (lcd_update_state + 1) % 3;
+		lcd_update_state = (++lcd_update_state) % (lcd_update::update_items - 1);
 		lastLcdTick = millis();
 	}
 }
