@@ -165,7 +165,7 @@ void setup()
 	lcd.clear();
 	lcd.setCursor(3, 0);
 	lcd.print(" kmh");
-	lcd.setCursor(16, 1);
+	lcd.setCursor(16, 0);
 	lcd.print(" rpm");
 	lcd.setCursor(0, 1);
 	lcd.print("Throttle: ");
@@ -281,6 +281,7 @@ void loop()
 		switch (lcd_update_state)
 		{
 		case 0:
+		{
 			// speed
 			lcd.setCursor(0, 0);
 			uint8_t speed = motor_rpm / rpm_calc::RPM_TO_KMH_DIVISOR;
@@ -294,7 +295,9 @@ void loop()
 			}
 			lcd.print(speed);
 			break;
+		}
 		case 1:
+		{
 			// motor rpm
 			lcd.setCursor(12, 0);
 			uint16_t rpm = motor_rpm * 6000 / 32767;
@@ -312,7 +315,9 @@ void loop()
 			}
 			lcd.print(rpm);
 			break;
+		}
 		case 2:
+		{
 			// throttle percentage
 			lcd.setCursor(10, 0);
 			uint8_t throttle_percent = abs(torque_val) * 100 / rpm_calc::MAX_TORQUE_VAL;
@@ -334,7 +339,9 @@ void loop()
 			}
 			lcd.print(throttle_percent);
 			break;
+		}
 		case 3:
+		{
 			// motor warn/error
 			lcd.setCursor(16, 2);
 			lcd.print("00");
@@ -345,7 +352,9 @@ void loop()
 			lcd.setCursor(18, 2);
 			lcd.print(motor_error, HEX);
 			break;
+		}
 		case 4:
+		{
 			// odometer
 			odometer_integral += motor_rpm;
 			lcd.setCursor(12, 3);
@@ -369,7 +378,8 @@ void loop()
 			lcd.print(odometer);
 			break;
 		}
-		lcd_update_state = (++lcd_update_state) % (lcd_update::update_items - 1);
+		}
+		lcd_update_state = (lcd_update_state + 1) % (lcd_update::update_items - 1);
 		lastLcdTick = millis();
 	}
 }
