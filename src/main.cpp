@@ -93,12 +93,12 @@ namespace rpm_calc
 #define CAN1_CS PIN_PB1 ///< @brief Chip Select pin for CAN Controller 1 (PB1)
 
 // Rotary Encoder Pins
-// #define ENC_A PIN_PC0 ///< @brief Pin for Rotary Encoder A output (PC0 - Analog 0)
-// #define ENC_B PIN_PC1 ///< @brief Pin for Rotary Encoder B output (PC1 - Analog 1)
-bool test_mode = true;
-int test_encA = 1, test_encB = 0;
-int lastStateA, lastStateB;
-int lastChange = 0;
+#define PIN_ENC_A PIN_PD2 ///< @brief Pin for Rotary Encoder A output (PC0 - Analog 0)
+#define PIN_ENC_B PIN_PC1 ///< @brief Pin for Rotary Encoder B output (PC1 - Analog 1)
+
+#define PIN_SHIFT_ENC_B PC1 ///< @brief Amount to shift for read
+
+constexpr int8_t NUM_PAGES = 4; 
 
 // I2C Communication Pins
 #define SDA_PIN PIN_PC4 ///< @brief SDA pin for I2C communication (PC4 - Analog 4)
@@ -149,13 +149,40 @@ LiquidCrystal_I2C lcd(0x27, 20, 4);
 // update ticks
 uint32_t lastLcdTick = 0;
 uint32_t lastCanReadTick = 0;
-uint8_t write_counter = 0;
+int8_t write_counter = 0;
 MCP2515 cans[NUM_MCP] = {can_vcu, can_ssru};
 
 CarState car;
 
+
+volatile uint8_t encoder_count = 0;
+volatile bool encoder_changed = false;
+
+ISR(INT0_vect){
+	if (PINC & (1 << PIN_SHIFT_ENC_B))
+	{ // clockwise
+		++encoder_count;
+	}
+	else
+	{ // anticlockwise
+		--encoder_count;
+	}
+	encoder_changed = true;
+}
+
 void setup()
 {
+	pinMode(PIN_ENC_A, INPUT_PULLUP);
+	pinMode(PIN_ENC_B, INPUT);
+
+
+	cli();
+	EICRA |= (1 << ISC01);
+	EICRA &= ~(1 << ISC00);
+	
+	EIMSK |= (1 << INT0);
+	sei();
+
 	randomSeed(analogRead(GPIO_1)); // Seed random number generator with noise from an unconnected analog pin for better randomness
 	Serial.begin(115200);
 	lcd.begin(20, 4);
@@ -245,6 +272,12 @@ void setup()
 }
 void loop()
 {
+	if (encoder_changed)
+	{
+		encoder_count = (encoder_count % NUM_PAGES + NUM_PAGES) % NUM_PAGES;
+		lcd.setCursor(10, 0);
+		lcd.print(encoder_count);
+	}
 	/*    int encA, encB;
 
 	if (test_mode) {
