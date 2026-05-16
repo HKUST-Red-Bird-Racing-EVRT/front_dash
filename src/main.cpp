@@ -513,6 +513,6 @@ void loop()
 		}
 		}
 		lcd_update_state = (lcd_update_state + 1) % (lcd_update::update_items);
-		lastLcdTick = millis();
+		lastLcdTick += lcd_update::update_interval_ms;
 	}
 }
