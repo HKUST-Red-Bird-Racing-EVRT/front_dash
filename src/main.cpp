@@ -33,15 +33,61 @@ byte byte_char_locked[8] = {
 	0b11111};
 #define char_locked 0
 
+/**
+ * @brief Get pedal fault
+ */
+const char *getPedalFaultString(uint8_t fault_byte)
+{
+	if (fault_byte & 0x01)
+		return "Pedal FAULT ACTIVE!";
+	if (fault_byte & 0x02)
+		return "Pedal fault >100ms";
+	if (fault_byte & 0x04)
+		return "APPS 5V low";
+	if (fault_byte & 0x08)
+		return "APPS 5V high";
+	if (fault_byte & 0x10)
+		return "APPS 3V3 low";
+	if (fault_byte & 0x20)
+		return "APPS 3V3 high";
+	if (fault_byte & 0x40)
+		return "Brake low";
+	if (fault_byte & 0x80)
+		return "Brake high";
+	return "No fault";
+}
+
+/**
+ * @brief Get BMS status
+ */
+const char *getBmsStatusString(BmsStatus status)
+{
+	switch (status)
+	{
+	case BmsStatus::NoMsg:
+		return "No BMS message";
+	case BmsStatus::Waiting:
+		return "BMS Waiting";
+	case BmsStatus::Starting:
+		return "BMS Starting HV";
+	case BmsStatus::Started:
+		return "BMS HV Started";
+	default:
+		return "BMS Unknown";
+	}
+}
+
 can_frame rx_frame;
 int message_count = 0;
 uint8_t pot_buffer[8] = {0}; // Buffer for merged POT data (0x730 + 0x750)
 bool pot_730_ready = false;
 bool pot_750_ready = false;
+bool hasStarted = false;
 
 int16_t torque_val, motor_rpm = 0;
 uint16_t motor_warn, motor_error = 0; // Variable to store motor stuff
-uint32_t odometer_integral = 0;		  // Variable to store integral of RPM for odometer calculation
+uint16_t carstate = 0;
+uint32_t odometer_integral = 0; // Variable to store integral of RPM for odometer calculation
 
 namespace lcd_update
 {
@@ -98,7 +144,7 @@ namespace rpm_calc
 
 #define PIN_SHIFT_ENC_B PC1 ///< @brief Amount to shift for read
 
-constexpr int8_t NUM_PAGES = 4; 
+constexpr int8_t NUM_PAGES = 5;
 
 // I2C Communication Pins
 #define SDA_PIN PIN_PC4 ///< @brief SDA pin for I2C communication (PC4 - Analog 4)
@@ -154,11 +200,128 @@ MCP2515 cans[NUM_MCP] = {can_vcu, can_ssru};
 
 CarState car;
 
+// BMS State
+struct BmsData
+{
+	uint8_t raw_data[8];
+	BmsStatus status;
+} bms;
+
+// Snake Game State
+struct SnakeGame
+{
+	static constexpr uint8_t LCD_WIDTH = 20;
+	static constexpr uint8_t LCD_HEIGHT = 4;
+	static constexpr uint8_t MAX_SNAKE_LENGTH = 20;
+	struct Point
+	{
+		uint8_t x;
+		uint8_t y;
+	};
+
+	Point snake[MAX_SNAKE_LENGTH];
+	uint8_t snake_length;
+	Point apple;
+	uint8_t direction; // 0=up, 1=right, 2=down, 3=left
+	uint8_t next_direction;
+	bool game_over;
+	uint32_t last_move_time;
+	static constexpr uint32_t MOVE_DELAY_MS = 300;
+
+	void init()
+	{
+		snake_length = 3;
+		snake[0] = {10, 2};
+		snake[1] = {9, 2};
+		snake[2] = {8, 2};
+		direction = 1; // moving right
+		next_direction = 1;
+		game_over = false;
+		last_move_time = millis();
+		spawn_apple();
+	}
+
+	void spawn_apple()
+	{
+		bool valid = false;
+		while (!valid)
+		{
+			apple.x = random(0, LCD_WIDTH);
+			apple.y = random(0, LCD_HEIGHT);
+			valid = true;
+			for (uint8_t i = 0; i < snake_length; ++i)
+			{
+				if (snake[i].x == apple.x && snake[i].y == apple.y)
+				{
+					valid = false;
+					break;
+				}
+			}
+		}
+	}
+
+	void update()
+	{
+		if (game_over)
+			return;
+
+		uint32_t now = millis();
+		if (now - last_move_time < MOVE_DELAY_MS)
+			return;
+
+		direction = next_direction;
+		Point new_head = snake[0];
+		switch (direction)
+		{
+		case 0: // up
+			new_head.y = (new_head.y == 0) ? LCD_HEIGHT - 1 : new_head.y - 1;
+			break;
+		case 1: // right
+			new_head.x = (new_head.x == LCD_WIDTH - 1) ? 0 : new_head.x + 1;
+			break;
+		case 2: // down
+			new_head.y = (new_head.y == LCD_HEIGHT - 1) ? 0 : new_head.y + 1;
+			break;
+		case 3: // left
+			new_head.x = (new_head.x == 0) ? LCD_WIDTH - 1 : new_head.x - 1;
+			break;
+		}
+		// Check collision
+		for (uint8_t i = 0; i < snake_length; ++i)
+		{
+			if (new_head.x == snake[i].x && new_head.y == snake[i].y)
+			{
+				game_over = true;
+				return;
+			}
+		}
+
+		// Move snake
+		for (uint8_t i = snake_length; i > 0; --i)
+		{
+			snake[i] = snake[i - 1];
+		}
+		snake[0] = new_head;
+		if (new_head.x == apple.x && new_head.y == apple.y)
+		{
+			if (snake_length < MAX_SNAKE_LENGTH)
+			{
+				snake_length++;
+			}
+			spawn_apple();
+		}
+
+		last_move_time = now;
+		delay(50);
+	}
+} snake_game;
 
 volatile uint8_t encoder_count = 0;
 volatile bool encoder_changed = false;
+volatile uint8_t last_key_pressed = 0; // 0=none, 'w'=up, 'a'=left, 's'=down, 'd'=right, 'r'=restart
 
-ISR(INT0_vect){
+ISR(INT0_vect)
+{
 	if (PINC & (1 << PIN_SHIFT_ENC_B))
 	{ // clockwise
 		++encoder_count;
@@ -170,217 +333,10 @@ ISR(INT0_vect){
 	encoder_changed = true;
 }
 
-void setup()
+void lcd_updater(int pagenum, int lcd_update_state)
 {
-	pinMode(PIN_ENC_A, INPUT_PULLUP);
-	pinMode(PIN_ENC_B, INPUT);
-
-
-	cli();
-	EICRA |= (1 << ISC01);
-	EICRA &= ~(1 << ISC00);
-	
-	EIMSK |= (1 << INT0);
-	sei();
-
-	randomSeed(analogRead(GPIO_1)); // Seed random number generator with noise from an unconnected analog pin for better randomness
-	Serial.begin(115200);
-	lcd.begin(20, 4);
-	lcd.clear();
-	lcd.init();
-	lcd.backlight();
-	lcd.setCursor(0, 0);
-	lcd.print("Dash Init ");
-	lcd.createChar(char_locked, byte_char_locked);
-	for (int i = 0; i < 10; ++i)
-	{
-		delay(random(20, 100));
-		lcd.print(".");
-	}
-	lcd.setCursor(0, 1);
-	delay(300);
-	lcd.print("LCD ");
-	for (int i = 0; i < 13; ++i)
-	{
-		delay(random(20, 50));
-		lcd.print(".");
-	}
-	delay(250);
-	lcd.print(" OK");
-	lcd.setCursor(0, 2);
-	delay(random(50, 150));
-	lcd.print("CAN ");
-	for (int i = 0; i < NUM_MCP; ++i)
-	{
-		cans[i].reset();
-		delay(random(20, 50));
-		lcd.print(".");
-		delay(random(20, 50));
-		lcd.print(".");
-		cans[i].setBitrate(CAN_500KBPS, MCP_20MHZ);
-		delay(random(20, 50));
-		lcd.print(".");
-		delay(random(20, 50));
-		lcd.print(".");
-		cans[i].setNormalMode();
-		delay(random(20, 50));
-		lcd.print(".");
-		delay(random(20, 50));
-		lcd.print(".");
-	}
-	delay(random(20, 50));
-	lcd.print(".");
-	delay(random(50, 200));
-	lcd.print(" OK");
-	lcd.setCursor(0, 3);
-	delay(500);
-	lcd.setCursor(0, 0);
-	lcd.print("LCD ............. OK");
-	lcd.setCursor(0, 1);
-	lcd.print("CAN ............. OK");
-	lcd.setCursor(0, 2);
-	lcd.print("Serial              ");
-	lcd.setCursor(7, 2);
-	for (int i = 0; i < 10; ++i)
-	{
-		delay(random(10, 30));
-		lcd.print(".");
-	}
-	while (!Serial)
-	{
-		;
-	}
-	delay(random(100, 200));
-	lcd.print(" OK");
-	delay(random(100, 200));
-	lcd.setCursor(0, 3);
-	lcd.print("Dash Ready! Race!");
-	delay(2000);
-	lcd.clear();
-	lcd.setCursor(4, 0);
-	lcd.print(" kmh");
-	lcd.setCursor(16, 0);
-	lcd.print(" rpm");
-	lcd.setCursor(0, 1);
-	lcd.print("Throttle: ");
-	lcd.setCursor(19, 1);
-	lcd.print("%");
-	lcd.setCursor(0, 2);
-	lcd.print("MCU Warn/Err: 0x");
-	lcd.setCursor(0, 3);
-	lcd.print("Odometer:         km");
-}
-void loop()
-{
-	if (encoder_changed)
-	{
-		encoder_count = (encoder_count % NUM_PAGES + NUM_PAGES) % NUM_PAGES;
-		lcd.setCursor(10, 0);
-		lcd.print(encoder_count);
-	}
-	/*    int encA, encB;
-
-	if (test_mode) {
-		encA = test_encA;  // test values
-		encB = test_encB;
-		} else {
-			encA = digitalRead(PIN_PC0);  // actual pins
-			encB = digitalRead(PIN_PC1);
-		}
-		lcd.setCursor(0, 3);
-		lcd.print(millis());
-		*/
-	MCP2515::ERROR read_state = can_vcu.readMessage(&rx_frame);
-	if (read_state == MCP2515::ERROR_OK)
-	{
-		// if (test_encA==1){
-
-		uint8_t output = 0b10100000;
-		switch (rx_frame.can_id) // 20 20 200 ms counttime
-		{
-		case 0x700: // vcu pedals
-			car.pedal.status.byte = rx_frame.data[5];
-			car.pedal.faults.byte = rx_frame.data[6];
-			break;
-		case 0x701: // vcu motors
-			torque_val = (rx_frame.data[1] << 8) | rx_frame.data[0];
-			motor_rpm = (rx_frame.data[3] << 8) | rx_frame.data[2];
-			motor_warn = (rx_frame.data[5] << 8) | rx_frame.data[4];
-			motor_error = (rx_frame.data[7] << 8) | rx_frame.data[6];
-			output += 1;
-			break;
-		case 0x710: // vcu bms
-			output += 2;
-			break;
-		case 0x730: // front pot
-			memcpy(&pot_buffer[0], rx_frame.data, 4);
-			pot_730_ready = true;
-			break;
-		case 0x740: // front
-			output += 5;
-			break;
-		case 0x750: // rear pot
-			memcpy(&pot_buffer[4], rx_frame.data, 4);
-			pot_750_ready = true;
-			break;
-		case 0x760: // cooling
-			output += 8;
-			break;
-		default:
-			output += 15; // not supposed to happen
-		}
-		if (pot_730_ready && pot_750_ready)
-		{
-			output += 3;
-			Serial.write(output);
-			Serial.write(pot_buffer, 8);
-			pot_730_ready = false;
-			pot_750_ready = false;
-		}
-		else
-		{
-			Serial.write(output);
-			Serial.write(rx_frame.data, 8);
-		}
-		/*
-
-		lcd.setCursor(0, 0);
-		lcd.print("ID:        ");
-		lcd.setCursor(3, 0);
-		lcd.print(rx_frame.can_id, HEX);
-		lcd.setCursor(0, 2);
-		for (uint8_t i = 0; i < rx_frame.can_dlc && i < 8; i++){
-			if (rx_frame.data[i] < 0x10)
-			lcd.print("0");
-			lcd.print(rx_frame.data[i], HEX);
-			}}
-			//    else if (test_encB==1){
-				lcd.clear();
-				lcd.setCursor(1,1);
-				lcd.print("encoder works");
-				lcd.setCursor(0, 0);
-				lcd.print("RPM: ");
-				lcd.print(motor_rpm,HEX);
-				delay(100);
-				lcd.clear();
-				}
-				//**  if (test_mode) {
-					//
-					//    if (millis() - lastChange >= 5000) {
-						//      if (test_encA == 1 && test_encB == 0) {
-							//        test_encA = 0;
-							//      test_encB = 1;  // Switch to second path
-			//} else {
-			  //  test_encA = 1;
-			  //test_encB = 0;  // Switch to first path
-			  //}
-			  //lastChange = millis();}
-			  */
-	}
-	if (millis() - lastLcdTick >= lcd_update::update_interval_ms)
-	{
-		static uint8_t lcd_update_state = 0;
-		odometer_integral += abs(motor_rpm);
+	if (pagenum == 0)
+	{ // driver
 		switch (lcd_update_state)
 		{
 		case 0:
@@ -512,6 +468,377 @@ void loop()
 			break;
 		}
 		}
+	}
+	else if (pagenum == 1)
+	{ // VCU
+		static bool page1_init = false;
+		if (!page1_init || lcd_update_state == 0)
+		{
+			lcd.clear();
+			lcd.setCursor(3, 0);
+			lcd.print("  VCU/CAR PROBLEMS");
+			lcd.setCursor(0, 1);
+			lcd.print("Pedal Faults:");
+			page1_init = true;
+		}
+
+		if (lcd_update_state >= 1 && lcd_update_state <= 4)
+		{
+			lcd.setCursor(0, 2 + (lcd_update_state - 1));
+			lcd.print("                    ");
+			lcd.setCursor(0, 2 + (lcd_update_state - 1));
+
+			if (car.pedal.faults.byte == 0)
+			{
+				if (lcd_update_state == 1)
+					lcd.print("OK");
+			}
+			else
+			{
+				uint8_t fault_index = (lcd_update_state - 1) % 8;
+				if (car.pedal.faults.byte & (1 << fault_index))
+				{
+					lcd.print(getPedalFaultString(car.pedal.faults.byte));
+				}
+			}
+		}
+	}
+	else if (pagenum == 2)
+	{ // BMS
+		static bool page2_init = false;
+		if (!page2_init || lcd_update_state == 0)
+		{
+			lcd.clear();
+			lcd.setCursor(3, 0);
+			lcd.print("   BMS PROBLEMS");
+			lcd.setCursor(0, 1);
+			lcd.print("BMS Status:");
+			page2_init = true;
+		}
+
+		if (lcd_update_state >= 1 && lcd_update_state <= 3)
+		{
+			lcd.setCursor(0, 2);
+			lcd.print(" ");
+			lcd.setCursor(0, 2);
+			lcd.print(getBmsStatusString(bms.status));
+
+			lcd.setCursor(0, 3);
+			lcd.print(" ");
+			if (bms.status == BmsStatus::NoMsg)
+			{
+				lcd.setCursor(0, 3);
+				lcd.print("ERROR: No BMS msg!");
+			}
+		}
+	}
+	else if (pagenum == 3)
+	{ // Reserved
+		switch (lcd_update_state)
+		{
+		case 0:
+		{
+			lcd.clear();
+			lcd.setCursor(0, 0);
+			lcd.print("hi");
+			break;
+		}
+		}
+	}
+	else if (pagenum == 4)
+	{ // Snake (yes)
+		if (lcd_update_state == 0)
+		{
+			if (!snake_game.game_over)
+			{
+				lcd.clear();
+				snake_game.init();
+			}
+
+			if (last_key_pressed != 0)
+			{
+				switch (last_key_pressed)
+				{
+				case 'w': // up
+					if (snake_game.direction != 2)
+						snake_game.next_direction = 0;
+					break;
+				case 'd': // right
+					if (snake_game.direction != 3)
+						snake_game.next_direction = 1;
+					break;
+				case 's': // down
+					if (snake_game.direction != 0)
+						snake_game.next_direction = 2;
+					break;
+				case 'a': // left
+					if (snake_game.direction != 1)
+						snake_game.next_direction = 3;
+					break;
+				case 'r': // restart
+					snake_game.init();
+					break;
+				}
+				last_key_pressed = 0;
+			}
+			snake_game.update();
+			lcd.clear();
+			for (uint8_t i = 0; i < snake_game.snake_length; ++i)
+			{
+				lcd.setCursor(snake_game.snake[i].x, snake_game.snake[i].y);
+				if (i == 0)
+					lcd.print("@"); // head
+				else
+					lcd.print("o"); // body
+			}
+			lcd.setCursor(snake_game.apple.x, snake_game.apple.y);
+			lcd.print("*");
+			if (snake_game.game_over)
+			{
+				lcd.setCursor(0, 0);
+				lcd.print("GAME OVER! Len:");
+				lcd.setCursor(15, 0);
+				lcd.print(snake_game.snake_length, DEC);
+				lcd.setCursor(2, 2);
+				lcd.print("Press R to restart");
+			}
+		}
+	}
+}
+
+void setup()
+{
+	pinMode(PIN_ENC_A, INPUT_PULLUP);
+	pinMode(PIN_ENC_B, INPUT);
+
+	cli();
+	EICRA |= (1 << ISC01);
+	EICRA &= ~(1 << ISC00);
+
+	EIMSK |= (1 << INT0);
+	sei();
+
+	randomSeed(analogRead(GPIO_1)); // Seed random number generator with noise from an unconnected analog pin for better randomness
+	Serial.begin(115200);
+	lcd.begin(20, 4);
+	lcd.clear();
+	lcd.init();
+	lcd.backlight();
+	lcd.setCursor(0, 0);
+	lcd.print("Dash Init ");
+	lcd.createChar(char_locked, byte_char_locked);
+	for (int i = 0; i < 10; ++i)
+	{
+		delay(random(20, 100));
+		lcd.print(".");
+	}
+	lcd.setCursor(0, 1);
+	delay(300);
+	lcd.print("LCD ");
+	for (int i = 0; i < 13; ++i)
+	{
+		delay(random(20, 50));
+		lcd.print(".");
+	}
+	delay(250);
+	lcd.print(" OK");
+	lcd.setCursor(0, 2);
+	delay(random(50, 150));
+	lcd.print("CAN ");
+	for (int i = 0; i < NUM_MCP; ++i)
+	{
+		cans[i].reset();
+		delay(random(20, 50));
+		lcd.print(".");
+		delay(random(20, 50));
+		lcd.print(".");
+		cans[i].setBitrate(CAN_500KBPS, MCP_20MHZ);
+		delay(random(20, 50));
+		lcd.print(".");
+		delay(random(20, 50));
+		lcd.print(".");
+		cans[i].setNormalMode();
+		delay(random(20, 50));
+		lcd.print(".");
+		delay(random(20, 50));
+		lcd.print(".");
+	}
+	delay(random(20, 50));
+	lcd.print(".");
+	delay(random(50, 200));
+	lcd.print(" OK");
+	lcd.setCursor(0, 3);
+	delay(500);
+	lcd.setCursor(0, 0);
+	lcd.print("LCD ............. OK");
+	lcd.setCursor(0, 1);
+	lcd.print("CAN ............. OK");
+	lcd.setCursor(0, 2);
+	lcd.print("Serial              ");
+	lcd.setCursor(7, 2);
+	for (int i = 0; i < 10; ++i)
+	{
+		delay(random(10, 30));
+		lcd.print(".");
+	}
+	while (!Serial)
+	{
+		;
+	}
+	delay(random(100, 200));
+	lcd.print(" OK");
+	delay(random(100, 200));
+	lcd.setCursor(0, 3);
+	lcd.print("Dash Ready! Race!");
+	delay(2000);
+	lcd.clear();
+	lcd.setCursor(4, 0);
+	lcd.print(" kmh");
+	lcd.setCursor(16, 0);
+	lcd.print(" rpm");
+	lcd.setCursor(0, 1);
+	lcd.print("Throttle: ");
+	lcd.setCursor(19, 1);
+	lcd.print("%");
+	lcd.setCursor(0, 2);
+	lcd.print("MCU Warn/Err: 0x");
+	lcd.setCursor(0, 3);
+	lcd.print("Odometer:         km");
+}
+void loop()
+{
+	if (Serial.available())
+	{
+		uint8_t key = Serial.read();
+		if (encoder_count == 4)
+		{
+			if (key == 'w' || key == 'd' || key == 's' || key == 'a' || key == 'r')
+			{
+				last_key_pressed = key;
+			}
+		}
+	}
+
+	if (encoder_changed)
+	{
+		encoder_count = (encoder_count % NUM_PAGES + NUM_PAGES) % NUM_PAGES;
+		switch (encoder_count)
+		{
+		case 0: // driver
+		{
+			lcd.clear();
+			lcd.setCursor(4, 0);
+			lcd.print(" kmh");
+			lcd.setCursor(16, 0);
+			lcd.print(" rpm");
+			lcd.setCursor(0, 1);
+			lcd.print("Throttle: ");
+			lcd.setCursor(19, 1);
+			lcd.print("%");
+			lcd.setCursor(0, 2);
+			lcd.print("MCU Warn/Err: 0x");
+			lcd.setCursor(0, 3);
+			lcd.print("Odometer:         km");
+			break;
+		}
+		case 1: // VCU
+		{
+			lcd.clear();
+			lcd.setCursor(0, 0);
+			lcd.print("  VCU/CAR PROBLEMS");
+			break;
+		}
+		case 2: // BMS
+		{
+			lcd.clear();
+			lcd.setCursor(0, 0);
+			lcd.print("   BMS PROBLEMS");
+			break;
+		}
+		case 3: // empty
+		{
+			lcd.clear();
+			lcd.setCursor(0, 0);
+			lcd.print("Hi");
+			break;
+		}
+		case 4: // Snake game
+		{
+			lcd.clear();
+			lcd.setCursor(2, 1);
+			lcd.print("Snake Game");
+			lcd.setCursor(0, 2);
+			lcd.print("Loading...");
+			delay(1000);
+			break;
+		}
+		}
+		encoder_changed = false;
+	}
+
+	hasStarted = (car.pedal.status.bits.car_status == CarStatus::Drive);
+	MCP2515::ERROR read_state = can_vcu.readMessage(&rx_frame);
+	if (read_state == MCP2515::ERROR_OK)
+	{
+		uint8_t output = 0b10100000;
+		switch (rx_frame.can_id) // 20 20 200 ms counttime
+		{
+		case 0x700: // vcu pedals
+			car.pedal.status.byte = rx_frame.data[5];
+			car.pedal.faults.byte = rx_frame.data[6];
+			carstate = (rx_frame.data[5]);
+			break;
+		case 0x701: // vcu motors
+			torque_val = (rx_frame.data[1] << 8) | rx_frame.data[0];
+			motor_rpm = (rx_frame.data[3] << 8) | rx_frame.data[2];
+			if (hasStarted)
+			{
+				motor_warn |= ((rx_frame.data[5] << 8) | rx_frame.data[4]);
+				motor_error |= ((rx_frame.data[7] << 8) | rx_frame.data[6]);
+			}
+			output += 1;
+			break;
+		case 0x710: // vcu bms
+			memcpy(bms.raw_data, rx_frame.data, 8);
+			bms.status = BmsStatus::Started;
+			output += 2;
+			break;
+		case 0x730: // front pot
+			memcpy(&pot_buffer[0], rx_frame.data, 4);
+			pot_730_ready = true;
+			break;
+		case 0x740: // front
+			output += 5;
+			break;
+		case 0x750: // rear pot
+			memcpy(&pot_buffer[4], rx_frame.data, 4);
+			pot_750_ready = true;
+			break;
+		case 0x760: // cooling
+			output += 8;
+			break;
+		default:
+			output += 15; // not supposed to happen
+		}
+		if (pot_730_ready && pot_750_ready)
+		{
+			output += 3;
+			Serial.write(output);
+			Serial.write(pot_buffer, 8);
+			pot_730_ready = false;
+			pot_750_ready = false;
+		}
+		else
+		{
+			Serial.write(output);
+			Serial.write(rx_frame.data, 8);
+		}
+	}
+	if (millis() - lastLcdTick >= lcd_update::update_interval_ms)
+	{
+		static uint8_t lcd_update_state = 0;
+		odometer_integral += abs(motor_rpm);
+		lcd_updater(encoder_count, lcd_update_state);
 		lcd_update_state = (lcd_update_state + 1) % (lcd_update::update_items);
 		lastLcdTick += lcd_update::update_interval_ms;
 	}
