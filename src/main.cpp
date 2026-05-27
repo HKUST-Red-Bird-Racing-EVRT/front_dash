@@ -2,6 +2,18 @@
  * @file main.cpp
  * @brief This file contains the main functions for DASH of gen6 car
  * @note This code is intended for testing purposes only.
+ * 
+ * @page_architecture Unified Page Architecture:
+ * - Page 0: Driver
+ * - Page 1: VCU
+ * - Page 2: BMS
+ * - Page 3: empty
+ * - Page 4: Snake
+ * 
+ * Pages are switched via rotary encoder (INT0_vect ISR).
+ * Call page.set_page(num) to switch pages.
+ * Call page.update() regularly to refresh display.
+ * Call page.handle_snake_input(key) for snake game controls.
  */
 
 #include <Arduino.h>
@@ -10,28 +22,7 @@
 #include <SoftwareSerial.h>
 #include "pinMap.h"
 #include "CarState.hpp"
-
-// Custom Char
-byte degCelsius[8] = { // degree celsius char
-	0b01000,
-	0b10100,
-	0b01000,
-	0b00011,
-	0b00100,
-	0b00100,
-	0b00100,
-	0b00011};
-
-byte byte_char_locked[8] = {
-	0b01110,
-	0b10001,
-	0b10001,
-	0b11111,
-	0b11011,
-	0b11011,
-	0b11011,
-	0b11111};
-#define char_locked 0
+#include "Page.hpp"
 
 /**
  * @brief Get pedal fault
@@ -199,6 +190,7 @@ int8_t write_counter = 0;
 MCP2515 cans[NUM_MCP] = {can_vcu, can_ssru};
 
 CarState car;
+Page page(lcd, car, motor_rpm, torque_val, motor_warn, motor_error, odometer_integral, bms);
 
 // BMS State
 struct BmsData
@@ -333,279 +325,6 @@ ISR(INT0_vect)
 	encoder_changed = true;
 }
 
-void lcd_updater(int pagenum, int lcd_update_state)
-{
-	if (pagenum == 0)
-	{ // driver
-		switch (lcd_update_state)
-		{
-		case 0:
-		{
-			// speed
-			lcd.setCursor(0, 0);
-			uint8_t speed = abs(motor_rpm) / rpm_calc::RPM_TO_KMH_DIVISOR;
-			char speed_str[5];
-			speed_str[4] = '\0';
-			for (int i = 3; i >= 1; --i)
-			{
-				speed_str[i] = (speed % 10) + '0';
-				speed /= 10;
-			}
-			speed_str[0] = (motor_rpm >= 0) ? '+' : '-';
-			lcd.print(speed_str);
-			break;
-		}
-		case 1:
-		{
-			// motor rpm
-			lcd.setCursor(11, 0);
-			uint16_t rpm = (uint32_t)abs(motor_rpm) * rpm_calc::MAX_MOTOR_RPM / rpm_calc::MAX_MOTOR_RPM_READING;
-			char rpm_str[6];
-			rpm_str[5] = '\0';
-			for (int i = 4; i >= 1; --i)
-			{
-				rpm_str[i] = (rpm % 10) + '0';
-				rpm /= 10;
-			}
-			if (motor_rpm >= 0)
-			{
-				rpm_str[0] = '+';
-			}
-			else
-			{
-				rpm_str[0] = '-';
-			}
-			lcd.print(rpm_str);
-			break;
-		}
-		case 2:
-		{
-			// throttle percentage
-			lcd.setCursor(14, 1);
-			uint8_t throttle_percent = (uint32_t)(abs(torque_val) + 162) * 100 / 32500;
-			char throttle_str[5];
-			throttle_str[4] = '\0';
-			if (torque_val >= 0)
-			{
-				throttle_str[0] = '+';
-			}
-			else
-			{
-				throttle_str[0] = '-';
-			}
-			for (int i = 3; i >= 1; --i)
-			{
-				throttle_str[i] = (throttle_percent % 10) + '0';
-				throttle_percent /= 10;
-			}
-			lcd.print(throttle_str);
-			break;
-		}
-		case 3:
-		{
-			// motor warn/error
-			lcd.setCursor(16, 2);
-			lcd.print("00");
-			lcd.setCursor(16, 2);
-			lcd.print(motor_warn, HEX);
-			lcd.setCursor(18, 2);
-			lcd.print("00");
-			lcd.setCursor(18, 2);
-			lcd.print(motor_error, HEX);
-
-			// drive mode
-			lcd.setCursor(9, 0);
-			switch (car.pedal.status.bits.car_status)
-			{
-			case CarStatus::Init:
-			{
-				lcd.write(char_locked);
-				break;
-			}
-			case CarStatus::Startin:
-			{
-				lcd.print("S");
-				break;
-			}
-			case CarStatus::Bussin:
-			{
-				lcd.print("B");
-				break;
-			}
-			case CarStatus::Drive:
-			{
-				lcd.print("D");
-				break;
-			}
-			}
-			break;
-		}
-		case 4:
-		{
-			// odometer
-			constexpr uint8_t ODO_NUM_DIGITS = 6;
-			constexpr uint8_t ODO_DECIMAL_PLACES = rpm_calc::NUM_DECIMAL_PLACE;
-			constexpr uint8_t ODO_STR_LENGTH = ODO_NUM_DIGITS + 1 + 1; // digits + decimal point + null terminator
-			constexpr uint8_t ODO_POS_OFFSET = ODO_STR_LENGTH + 1 + 2; // odometer string + " km" right align padding
-			constexpr uint8_t STR_START_POS = 21 - ODO_POS_OFFSET;	   // right align the odometer reading
-			lcd.setCursor(STR_START_POS, 3);
-			uint32_t odometer = odometer_integral / rpm_calc::RPM_INTEGRAL_TO_KM_DIVISOR;
-			char odometer_str[ODO_STR_LENGTH];
-			odometer_str[ODO_STR_LENGTH - 1] = '\0';
-			for (int i = ODO_STR_LENGTH - 2; i >= 0; --i)
-			{
-				if (i == ODO_NUM_DIGITS - ODO_DECIMAL_PLACES)
-				{
-					odometer_str[i] = '.';
-				}
-				else
-				{
-					odometer_str[i] = (odometer % 10) + '0';
-					odometer /= 10;
-				}
-			}
-			lcd.print(odometer_str);
-			break;
-		}
-		}
-	}
-	else if (pagenum == 1)
-	{ // VCU
-		static bool page1_init = false;
-		if (!page1_init || lcd_update_state == 0)
-		{
-			lcd.clear();
-			lcd.setCursor(3, 0);
-			lcd.print("  VCU/CAR PROBLEMS");
-			lcd.setCursor(0, 1);
-			lcd.print("Pedal Faults:");
-			page1_init = true;
-		}
-
-		if (lcd_update_state >= 1 && lcd_update_state <= 4)
-		{
-			lcd.setCursor(0, 2 + (lcd_update_state - 1));
-			lcd.print("                    ");
-			lcd.setCursor(0, 2 + (lcd_update_state - 1));
-
-			if (car.pedal.faults.byte == 0)
-			{
-				if (lcd_update_state == 1)
-					lcd.print("OK");
-			}
-			else
-			{
-				uint8_t fault_index = (lcd_update_state - 1) % 8;
-				if (car.pedal.faults.byte & (1 << fault_index))
-				{
-					lcd.print(getPedalFaultString(car.pedal.faults.byte));
-				}
-			}
-		}
-	}
-	else if (pagenum == 2)
-	{ // BMS
-		static bool page2_init = false;
-		if (!page2_init || lcd_update_state == 0)
-		{
-			lcd.clear();
-			lcd.setCursor(3, 0);
-			lcd.print("   BMS PROBLEMS");
-			lcd.setCursor(0, 1);
-			lcd.print("BMS Status:");
-			page2_init = true;
-		}
-
-		if (lcd_update_state >= 1 && lcd_update_state <= 3)
-		{
-			lcd.setCursor(0, 2);
-			lcd.print(" ");
-			lcd.setCursor(0, 2);
-			lcd.print(getBmsStatusString(bms.status));
-
-			lcd.setCursor(0, 3);
-			lcd.print(" ");
-			if (bms.status == BmsStatus::NoMsg)
-			{
-				lcd.setCursor(0, 3);
-				lcd.print("ERROR: No BMS msg!");
-			}
-		}
-	}
-	else if (pagenum == 3)
-	{ // Reserved
-		switch (lcd_update_state)
-		{
-		case 0:
-		{
-			lcd.clear();
-			lcd.setCursor(0, 0);
-			lcd.print("hi");
-			break;
-		}
-		}
-	}
-	else if (pagenum == 4)
-	{ // Snake (yes)
-		if (lcd_update_state == 0)
-		{
-			if (!snake_game.game_over)
-			{
-				lcd.clear();
-				snake_game.init();
-			}
-
-			if (last_key_pressed != 0)
-			{
-				switch (last_key_pressed)
-				{
-				case 'w': // up
-					if (snake_game.direction != 2)
-						snake_game.next_direction = 0;
-					break;
-				case 'd': // right
-					if (snake_game.direction != 3)
-						snake_game.next_direction = 1;
-					break;
-				case 's': // down
-					if (snake_game.direction != 0)
-						snake_game.next_direction = 2;
-					break;
-				case 'a': // left
-					if (snake_game.direction != 1)
-						snake_game.next_direction = 3;
-					break;
-				case 'r': // restart
-					snake_game.init();
-					break;
-				}
-				last_key_pressed = 0;
-			}
-			snake_game.update();
-			lcd.clear();
-			for (uint8_t i = 0; i < snake_game.snake_length; ++i)
-			{
-				lcd.setCursor(snake_game.snake[i].x, snake_game.snake[i].y);
-				if (i == 0)
-					lcd.print("@"); // head
-				else
-					lcd.print("o"); // body
-			}
-			lcd.setCursor(snake_game.apple.x, snake_game.apple.y);
-			lcd.print("*");
-			if (snake_game.game_over)
-			{
-				lcd.setCursor(0, 0);
-				lcd.print("GAME OVER! Len:");
-				lcd.setCursor(15, 0);
-				lcd.print(snake_game.snake_length, DEC);
-				lcd.setCursor(2, 2);
-				lcd.print("Press R to restart");
-			}
-		}
-	}
-}
-
 void setup()
 {
 	pinMode(PIN_ENC_A, INPUT_PULLUP);
@@ -626,7 +345,6 @@ void setup()
 	lcd.backlight();
 	lcd.setCursor(0, 0);
 	lcd.print("Dash Init ");
-	lcd.createChar(char_locked, byte_char_locked);
 	for (int i = 0; i < 10; ++i)
 	{
 		delay(random(20, 100));
@@ -692,6 +410,11 @@ void setup()
 	lcd.print("Dash Ready! Race!");
 	delay(2000);
 	lcd.clear();
+	
+	// Initialize the Page system - calls Page::setup() to configure display
+	page.setup();
+	
+	// Display initial driver page layout
 	lcd.setCursor(4, 0);
 	lcd.print(" kmh");
 	lcd.setCursor(16, 0);
@@ -707,26 +430,25 @@ void setup()
 }
 void loop()
 {
+	// Handle serial input for snake game controls
 	if (Serial.available())
 	{
 		uint8_t key = Serial.read();
-		if (encoder_count == 4)
-		{
-			if (key == 'w' || key == 'd' || key == 's' || key == 'a' || key == 'r')
-			{
-				last_key_pressed = key;
-			}
-		}
+		page.handle_snake_input(key);
 	}
 
+	// Handle page switching via rotary encoder
 	if (encoder_changed)
 	{
 		encoder_count = (encoder_count % NUM_PAGES + NUM_PAGES) % NUM_PAGES;
-		switch (encoder_count)
+		page.set_page(encoder_count);
+		
+		// Clear display for page transition
+		lcd.clear();
+		
+		// Display page-specific initial layout for driver page
+		if (encoder_count == 0)
 		{
-		case 0: // driver
-		{
-			lcd.clear();
 			lcd.setCursor(4, 0);
 			lcd.print(" kmh");
 			lcd.setCursor(16, 0);
@@ -739,39 +461,6 @@ void loop()
 			lcd.print("MCU Warn/Err: 0x");
 			lcd.setCursor(0, 3);
 			lcd.print("Odometer:         km");
-			break;
-		}
-		case 1: // VCU
-		{
-			lcd.clear();
-			lcd.setCursor(0, 0);
-			lcd.print("  VCU/CAR PROBLEMS");
-			break;
-		}
-		case 2: // BMS
-		{
-			lcd.clear();
-			lcd.setCursor(0, 0);
-			lcd.print("   BMS PROBLEMS");
-			break;
-		}
-		case 3: // empty
-		{
-			lcd.clear();
-			lcd.setCursor(0, 0);
-			lcd.print("Hi");
-			break;
-		}
-		case 4: // Snake game
-		{
-			lcd.clear();
-			lcd.setCursor(2, 1);
-			lcd.print("Snake Game");
-			lcd.setCursor(0, 2);
-			lcd.print("Loading...");
-			delay(1000);
-			break;
-		}
 		}
 		encoder_changed = false;
 	}
@@ -836,10 +525,8 @@ void loop()
 	}
 	if (millis() - lastLcdTick >= lcd_update::update_interval_ms)
 	{
-		static uint8_t lcd_update_state = 0;
 		odometer_integral += abs(motor_rpm);
-		lcd_updater(encoder_count, lcd_update_state);
-		lcd_update_state = (lcd_update_state + 1) % (lcd_update::update_items);
+		page.update();
 		lastLcdTick += lcd_update::update_interval_ms;
 	}
 }
