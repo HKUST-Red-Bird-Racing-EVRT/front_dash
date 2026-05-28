@@ -10,28 +10,8 @@
 #include <SoftwareSerial.h>
 #include "pinMap.h"
 #include "CarState.hpp"
+#include "Page.hpp"
 
-// Custom Char
-byte degCelsius[8] = { // degree celsius char
-	0b01000,
-	0b10100,
-	0b01000,
-	0b00011,
-	0b00100,
-	0b00100,
-	0b00100,
-	0b00011};
-
-byte byte_char_locked[8] = {
-	0b01110,
-	0b10001,
-	0b10001,
-	0b11111,
-	0b11011,
-	0b11011,
-	0b11011,
-	0b11111};
-#define char_locked 0
 
 /**
  * @brief Get pedal fault
@@ -197,6 +177,10 @@ uint32_t lastLcdTick = 0;
 uint32_t lastCanReadTick = 0;
 int8_t write_counter = 0;
 MCP2515 cans[NUM_MCP] = {can_vcu, can_ssru};
+
+// Page instance
+DashboardPage dashboardPage(lcd);
+Page* currentPage = &dashboardPage;
 
 CarState car;
 
@@ -626,7 +610,6 @@ void setup()
 	lcd.backlight();
 	lcd.setCursor(0, 0);
 	lcd.print("Dash Init ");
-	lcd.createChar(char_locked, byte_char_locked);
 	for (int i = 0; i < 10; ++i)
 	{
 		delay(random(20, 100));
@@ -692,18 +675,12 @@ void setup()
 	lcd.print("Dash Ready! Race!");
 	delay(2000);
 	lcd.clear();
-	lcd.setCursor(4, 0);
-	lcd.print(" kmh");
-	lcd.setCursor(16, 0);
-	lcd.print(" rpm");
-	lcd.setCursor(0, 1);
-	lcd.print("Throttle: ");
-	lcd.setCursor(19, 1);
-	lcd.print("%");
-	lcd.setCursor(0, 2);
-	lcd.print("MCU Warn/Err: 0x");
-	lcd.setCursor(0, 3);
-	lcd.print("Odometer:         km");
+
+	// Initialize the page
+	if (currentPage != nullptr)
+	{
+		currentPage->setup();
+	}
 }
 void loop()
 {
@@ -719,9 +696,16 @@ void loop()
 		}
 	}
 
+	// Update the current page
+	if (currentPage != nullptr)
+	{
+		currentPage->update();
+	}
+
 	if (encoder_changed)
 	{
 		encoder_count = (encoder_count % NUM_PAGES + NUM_PAGES) % NUM_PAGES;
+		
 		switch (encoder_count)
 		{
 		case 0: // driver
