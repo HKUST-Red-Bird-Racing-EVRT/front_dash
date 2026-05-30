@@ -1,19 +1,7 @@
 /**
  * @file main.cpp
  * @brief This file contains the main functions for DASH of gen6 car
- * @note This code is intended for testing purposes only.
- * 
- * @page_architecture Unified Page Architecture:
- * - Page 0: Driver
- * - Page 1: VCU
- * - Page 2: BMS
- * - Page 3: empty
- * - Page 4: Snake
- * 
  * Pages are switched via rotary encoder (INT0_vect ISR).
- * Call page.set_page(num) to switch pages.
- * Call page.update() regularly to refresh display.
- * Call page.handle_snake_input(key) for snake game controls.
  */
 
 #include <Arduino.h>
@@ -23,50 +11,7 @@
 #include "pinMap.h"
 #include "CarState.hpp"
 #include "Page.hpp"
-
-/**
- * @brief Get pedal fault
- */
-const char *getPedalFaultString(uint8_t fault_byte)
-{
-	if (fault_byte & 0x01)
-		return "Pedal FAULT ACTIVE!";
-	if (fault_byte & 0x02)
-		return "Pedal fault >100ms";
-	if (fault_byte & 0x04)
-		return "APPS 5V low";
-	if (fault_byte & 0x08)
-		return "APPS 5V high";
-	if (fault_byte & 0x10)
-		return "APPS 3V3 low";
-	if (fault_byte & 0x20)
-		return "APPS 3V3 high";
-	if (fault_byte & 0x40)
-		return "Brake low";
-	if (fault_byte & 0x80)
-		return "Brake high";
-	return "No fault";
-}
-
-/**
- * @brief Get BMS status
- */
-const char *getBmsStatusString(BmsStatus status)
-{
-	switch (status)
-	{
-	case BmsStatus::NoMsg:
-		return "No BMS message";
-	case BmsStatus::Waiting:
-		return "BMS Waiting";
-	case BmsStatus::Starting:
-		return "BMS Starting HV";
-	case BmsStatus::Started:
-		return "BMS HV Started";
-	default:
-		return "BMS Unknown";
-	}
-}
+#include "Structs.h"
 
 can_frame rx_frame;
 int message_count = 0;
@@ -189,128 +134,7 @@ uint32_t lastCanReadTick = 0;
 int8_t write_counter = 0;
 MCP2515 cans[NUM_MCP] = {can_vcu, can_ssru};
 
-// Page instance
-DashboardPage dashboardPage(lcd);
-Page* currentPage = &dashboardPage;
 
-CarState car;
-Page page(lcd, car, motor_rpm, torque_val, motor_warn, motor_error, odometer_integral, bms);
-
-// BMS State
-struct BmsData
-{
-	uint8_t raw_data[8];
-	BmsStatus status;
-} bms;
-
-// Snake Game State
-struct SnakeGame
-{
-	static constexpr uint8_t LCD_WIDTH = 20;
-	static constexpr uint8_t LCD_HEIGHT = 4;
-	static constexpr uint8_t MAX_SNAKE_LENGTH = 20;
-	struct Point
-	{
-		uint8_t x;
-		uint8_t y;
-	};
-
-	Point snake[MAX_SNAKE_LENGTH];
-	uint8_t snake_length;
-	Point apple;
-	uint8_t direction; // 0=up, 1=right, 2=down, 3=left
-	uint8_t next_direction;
-	bool game_over;
-	uint32_t last_move_time;
-	static constexpr uint32_t MOVE_DELAY_MS = 300;
-
-	void init()
-	{
-		snake_length = 3;
-		snake[0] = {10, 2};
-		snake[1] = {9, 2};
-		snake[2] = {8, 2};
-		direction = 1; // moving right
-		next_direction = 1;
-		game_over = false;
-		last_move_time = millis();
-		spawn_apple();
-	}
-
-	void spawn_apple()
-	{
-		bool valid = false;
-		while (!valid)
-		{
-			apple.x = random(0, LCD_WIDTH);
-			apple.y = random(0, LCD_HEIGHT);
-			valid = true;
-			for (uint8_t i = 0; i < snake_length; ++i)
-			{
-				if (snake[i].x == apple.x && snake[i].y == apple.y)
-				{
-					valid = false;
-					break;
-				}
-			}
-		}
-	}
-
-	void update()
-	{
-		if (game_over)
-			return;
-
-		uint32_t now = millis();
-		if (now - last_move_time < MOVE_DELAY_MS)
-			return;
-
-		direction = next_direction;
-		Point new_head = snake[0];
-		switch (direction)
-		{
-		case 0: // up
-			new_head.y = (new_head.y == 0) ? LCD_HEIGHT - 1 : new_head.y - 1;
-			break;
-		case 1: // right
-			new_head.x = (new_head.x == LCD_WIDTH - 1) ? 0 : new_head.x + 1;
-			break;
-		case 2: // down
-			new_head.y = (new_head.y == LCD_HEIGHT - 1) ? 0 : new_head.y + 1;
-			break;
-		case 3: // left
-			new_head.x = (new_head.x == 0) ? LCD_WIDTH - 1 : new_head.x - 1;
-			break;
-		}
-		// Check collision
-		for (uint8_t i = 0; i < snake_length; ++i)
-		{
-			if (new_head.x == snake[i].x && new_head.y == snake[i].y)
-			{
-				game_over = true;
-				return;
-			}
-		}
-
-		// Move snake
-		for (uint8_t i = snake_length; i > 0; --i)
-		{
-			snake[i] = snake[i - 1];
-		}
-		snake[0] = new_head;
-		if (new_head.x == apple.x && new_head.y == apple.y)
-		{
-			if (snake_length < MAX_SNAKE_LENGTH)
-			{
-				snake_length++;
-			}
-			spawn_apple();
-		}
-
-		last_move_time = now;
-		delay(50);
-	}
-} snake_game;
 
 volatile uint8_t encoder_count = 0;
 volatile bool encoder_changed = false;
@@ -442,29 +266,7 @@ void loop()
 		}
 	}
 
-	if (encoder_changed)
-	{
-		encoder_count = (encoder_count % NUM_PAGES + NUM_PAGES) % NUM_PAGES;
-		switch (encoder_count)
-		{
-		case 0: // driver
-		{
-			lcd.clear();
-			lcd.setCursor(4, 0);
-			lcd.print(" kmh");
-			lcd.setCursor(16, 0);
-			lcd.print(" rpm");
-			lcd.setCursor(0, 1);
-			lcd.print("Throttle: ");
-			lcd.setCursor(19, 1);
-			lcd.print("%");
-			lcd.setCursor(0, 2);
-			lcd.print("MCU Warn/Err: 0x");
-			lcd.setCursor(0, 3);
-			lcd.print("Odometer:         km");
-		}
-		encoder_changed = false;
-	}
+	Pages[encoder_count].setup();
 
 	hasStarted = (car.pedal.status.bits.car_status == CarStatus::Drive);
 	MCP2515::ERROR read_state = can_vcu.readMessage(&rx_frame);
