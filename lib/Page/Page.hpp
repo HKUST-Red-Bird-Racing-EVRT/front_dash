@@ -12,7 +12,7 @@
 #define PAGE_HPP
 
 #include <stdint.h>
-
+#include <LiquidCrystal_I2C.h>
 class LiquidCrystal_I2C;
 
 /**

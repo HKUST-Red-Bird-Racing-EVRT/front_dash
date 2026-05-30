@@ -1,9 +1,10 @@
 /**
- * @file CarState.hpp
+ * @file DashState.hpp
  * @author Planeson, Red Bird Racing
  * @brief Definition of the CarState structure representing the state of the car
- * @version 1.4.1
- * @date 2026-02-09
+ * Changed to not send canframes
+ * @version 1.0
+ * @date 2026-05-30
  * @see can.h, Enums.h
  */
 

@@ -24,7 +24,7 @@
  * Initializes the dashboard with reference to LCD display.
  * @param led reference to LiquidCrystal_I2C display object.
  */
-DashboardPage::DashboardPage(LiquidCrystal_I2C& lcd, DashState& state) : lcd(lcd)
+DashboardPage::Homescreen(LiquidCrystal_I2C& lcd, DashState& state) : lcd(lcd)
 {
     
 }
