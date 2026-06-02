@@ -72,7 +72,7 @@ namespace rpm_calc
 	constexpr uint32_t MM_PER_KM = (uint32_t)1000 * 1000;					 /**< Millimeters per kilometer. */
 	constexpr uint8_t MINUTES_PER_HOUR = 60;								 /**< Minutes per hour. */
 	constexpr uint16_t SECONDS_PER_HOUR = 3600;								 /**< Seconds per hour. */
-	constexpr uint8_t NUM_DECIMAL_PLACE = 5;								 /**< Number of decimal places (added 4 to become meter) */
+	constexpr uint8_t NUM_DECIMAL_PLACE = 3;								 /**< Number of decimal places (added 4 to become meter) */
 	constexpr uint32_t FIXED_POINT_MULTIPLIER = ipow(10, NUM_DECIMAL_PLACE); /**< Multiplier to adjust for decimal places */
 	constexpr double PI_ = 3.1415926535897932384626433832795;				 /**< Value of pi, unnamed to avoid clashing with Arduino.h's definition. */
 
@@ -98,7 +98,7 @@ namespace rpm_calc
 
 #define PIN_SHIFT_ENC_B PC1 ///< @brief Amount to shift for read
 
-constexpr int8_t NUM_PAGES = 4; 
+constexpr int8_t NUM_PAGES = 4;
 
 // I2C Communication Pins
 #define SDA_PIN PIN_PC4 ///< @brief SDA pin for I2C communication (PC4 - Analog 4)
@@ -154,11 +154,11 @@ MCP2515 cans[NUM_MCP] = {can_vcu, can_ssru};
 
 CarState car;
 
-
 volatile uint8_t encoder_count = 0;
 volatile bool encoder_changed = false;
 
-ISR(INT0_vect){
+ISR(INT0_vect)
+{
 	if (PINC & (1 << PIN_SHIFT_ENC_B))
 	{ // clockwise
 		++encoder_count;
@@ -175,11 +175,10 @@ void setup()
 	pinMode(PIN_ENC_A, INPUT_PULLUP);
 	pinMode(PIN_ENC_B, INPUT);
 
-
 	cli();
 	EICRA |= (1 << ISC01);
 	EICRA &= ~(1 << ISC00);
-	
+
 	EIMSK |= (1 << INT0);
 	sei();
 
@@ -301,12 +300,16 @@ void loop()
 		case 0x700: // vcu pedals
 			car.pedal.status.byte = rx_frame.data[5];
 			car.pedal.faults.byte = rx_frame.data[6];
+			car.pedal.apps_5v = rx_frame.data[0] | ((rx_frame.data[1] & 0x03) << 8);
+			car.pedal.apps_3v3 = ((rx_frame.data[1] & 0xFC) >> 2) | ((rx_frame.data[2] & 0x0F) << 6);
+			car.pedal.brake = ((rx_frame.data[2] & 0xF0) >> 4) | ((rx_frame.data[3] & 0x3F) << 4);
+			car.pedal.hall_sensor = ((rx_frame.data[3] & 0xC0) >> 6) | (rx_frame.data[4] << 2);
 			break;
 		case 0x701: // vcu motors
-			torque_val = (rx_frame.data[1] << 8) | rx_frame.data[0];
-			motor_rpm = (rx_frame.data[3] << 8) | rx_frame.data[2];
-			motor_warn = (rx_frame.data[5] << 8) | rx_frame.data[4];
-			motor_error = (rx_frame.data[7] << 8) | rx_frame.data[6];
+			torque_val = (uint16_t)(rx_frame.data[1] << 8) | rx_frame.data[0];
+			motor_rpm = (uint16_t)(rx_frame.data[3] << 8) | rx_frame.data[2];
+			motor_warn = car.pedal.status.bits.car_status == CarStatus::Drive ? ((rx_frame.data[5] << 8) | rx_frame.data[4]) | motor_warn : 0x00;
+			motor_error = car.pedal.status.bits.car_status == CarStatus::Drive ? ((rx_frame.data[7] << 8) | rx_frame.data[6]) | motor_error : 0x00;
 			output += 1;
 			break;
 		case 0x710: // vcu bms
@@ -390,7 +393,7 @@ void loop()
 			uint8_t speed = abs(motor_rpm) / rpm_calc::RPM_TO_KMH_DIVISOR;
 			char speed_str[5];
 			speed_str[4] = '\0';
-			for (int i = 3; i >= 1; --i)
+			for (uint8_t i = 3; i >= 1; --i)
 			{
 				speed_str[i] = (speed % 10) + '0';
 				speed /= 10;
@@ -406,7 +409,7 @@ void loop()
 			uint16_t rpm = (uint32_t)abs(motor_rpm) * rpm_calc::MAX_MOTOR_RPM / rpm_calc::MAX_MOTOR_RPM_READING;
 			char rpm_str[6];
 			rpm_str[5] = '\0';
-			for (int i = 4; i >= 1; --i)
+			for (uint8_t i = 4; i >= 1; --i)
 			{
 				rpm_str[i] = (rpm % 10) + '0';
 				rpm /= 10;
@@ -420,12 +423,22 @@ void loop()
 				rpm_str[0] = '-';
 			}
 			lcd.print(rpm_str);
+
+			char vcu_text[5]="    ";
+			vcu_text[3] = (car.pedal.faults.byte % 16 > 9) ? (car.pedal.faults.byte % 16 - 10 + 'A') : (car.pedal.faults.byte % 16 + '0');
+			vcu_text[2] = (car.pedal.faults.byte/16 % 16 > 9) ? (car.pedal.faults.byte/16 % 16 - 10 + 'A') : (car.pedal.faults.byte/16 % 16 + '0');
+			vcu_text[1] = (car.pedal.status.byte % 16 > 9) ? (car.pedal.status.byte % 16 - 10 + 'A') : (car.pedal.status.byte % 16 + '0');
+			vcu_text[0] = (car.pedal.status.byte/16 % 16 > 9) ? (car.pedal.status.byte/16 % 16 - 10 + 'A') : (car.pedal.status.byte/16 % 16 + '0');
+
+			lcd.setCursor(0,3);
+			lcd.print(vcu_text);
+
 			break;
 		}
 		case 2:
 		{
 			// throttle percentage
-			lcd.setCursor(14, 1);
+			lcd.setCursor(16, 2);
 			uint8_t throttle_percent = (uint32_t)(abs(torque_val) + 162) * 100 / 32500;
 			char throttle_str[5];
 			throttle_str[4] = '\0';
@@ -437,7 +450,7 @@ void loop()
 			{
 				throttle_str[0] = '-';
 			}
-			for (int i = 3; i >= 1; --i)
+			for (uint8_t i = 3; i >= 1; --i)
 			{
 				throttle_str[i] = (throttle_percent % 10) + '0';
 				throttle_percent /= 10;
@@ -447,14 +460,34 @@ void loop()
 		}
 		case 3:
 		{
+			char adc[17] = "                ";
+			adc[16] = '\0';
+			uint16_t values[4] = {car.pedal.apps_5v, car.pedal.apps_3v3, car.pedal.brake, car.pedal.hall_sensor};
+			for (uint8_t i = 0; i < 4; ++i)
+			{
+				for (uint8_t j = 3; j > 0; --j)
+				{
+					adc[4 * i + j - 1] = (values[i] % 16 > 9) ? (values[i] % 16 - 10 + 'A') : (values[i] % 16 + '0');
+					values[i] /= 16;
+					if (!values[i])
+						break;
+				}
+			}
+
+			// temp
+			lcd.setCursor(0, 2);
+			lcd.print(adc);
+
 			// motor warn/error
-			lcd.setCursor(16, 2);
-			lcd.print("00");
-			lcd.setCursor(16, 2);
-			lcd.print(motor_warn, HEX);
-			lcd.setCursor(18, 2);
-			lcd.print("00");
-			lcd.setCursor(18, 2);
+			lcd.setCursor(0, 1);
+			char motor_text[17] = "0000000000000000";
+			for (uint16_t warn = motor_warn, i = 0; warn && i < 16; ++i, warn/= 2)
+			{
+				motor_text[16-i] = warn % 2;
+			}
+			lcd.print(motor_text);
+			lcd.print("0000");
+			lcd.setCursor(16, 1);
 			lcd.print(motor_error, HEX);
 
 			// drive mode
@@ -496,7 +529,7 @@ void loop()
 			uint32_t odometer = odometer_integral / rpm_calc::RPM_INTEGRAL_TO_KM_DIVISOR;
 			char odometer_str[ODO_STR_LENGTH];
 			odometer_str[ODO_STR_LENGTH - 1] = '\0';
-			for (int i = ODO_STR_LENGTH - 2; i >= 0; --i)
+			for (int8_t i = ODO_STR_LENGTH - 2; i >= 0; --i)
 			{
 				if (i == ODO_NUM_DIGITS - ODO_DECIMAL_PLACES)
 				{
