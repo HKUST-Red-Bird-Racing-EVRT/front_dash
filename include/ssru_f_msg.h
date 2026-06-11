@@ -11,7 +11,7 @@ typedef struct{
     uint8_t imu1_a_z;
     uint8_t imu1_g_x;
 
-} ssru_f_700_t;
+} ssru_f_730_t;
 
 typedef struct{
     uint8_t imu1_g_y;
@@ -23,16 +23,12 @@ typedef struct{
     uint8_t imu2_g_y;
     uint8_t imu2_g_z;
 
-} ssru_f_701_t;
+} ssru_f_731_t;
 
-typedef struct{
-    uint16_t encoder;
-} ssru_f_702_t;
+typedef struct {
+    uint16_t encoder;  
+    uint16_t ds18b20;    
 
-typedef struct{
-    uint16_t braketemp1_in;
-    uint16_t braketemp2_in;
-    uint16_t whatever_temp;
-} ssru_f_703_t;
+} ssru_f_740_t;
 
 #endif
