@@ -10,8 +10,11 @@
 #include <SoftwareSerial.h>
 #include "pinMap.h"
 #include "CarState.hpp"
+#include "DashState.hpp"
 #include "Page.hpp"
 #include "Structs.h"
+#include "I2C.hpp"
+
 
 can_frame rx_frame;
 int message_count = 0;
@@ -19,6 +22,24 @@ uint8_t pot_buffer[8] = {0}; // Buffer for merged POT data (0x730 + 0x750)
 bool pot_730_ready = false;
 bool pot_750_ready = false;
 bool hasStarted = false;
+
+
+bool mode_changed, button_pushed;
+constexpr uint8_t old_tape_size = 5;
+constexpr uint8_t new_tape_size = 12;
+
+const I2cTransaction old_tape[old_tape_size];
+const I2cTransaction new_tape[new_tape_size];
+
+
+const I2cTransaction init_config;
+const I2cTransaction button_i2c_action;
+
+I2C<100, 8> i2c;
+
+ISR(TWI_vect){
+    i2c.handleIsr();
+}
 
 int16_t torque_val, motor_rpm = 0;
 uint16_t motor_warn, motor_error = 0; // Variable to store motor stuff
@@ -80,7 +101,7 @@ namespace rpm_calc
 
 #define PIN_SHIFT_ENC_B PC1 ///< @brief Amount to shift for read
 
-constexpr int8_t NUM_PAGES = 5;
+constexpr int8_t NUM_PAGES = 4;
 
 // I2C Communication Pins
 #define SDA_PIN PIN_PC4 ///< @brief SDA pin for I2C communication (PC4 - Analog 4)
@@ -123,6 +144,8 @@ MCP2515 can_ssru(CAN1_CS);
  *
  *
  */
+
+
 /**
  * @brief Arduino setup function.
  * @details It initializes serial communication
@@ -138,7 +161,6 @@ MCP2515 cans[NUM_MCP] = {can_vcu, can_ssru};
 
 volatile uint8_t encoder_count = 0;
 volatile bool encoder_changed = false;
-volatile uint8_t last_key_pressed = 0; // 0=none, 'w'=up, 'a'=left, 's'=down, 'd'=right, 'r'=restart
 
 ISR(INT0_vect)
 {
@@ -152,6 +174,15 @@ ISR(INT0_vect)
 	}
 	encoder_changed = true;
 }
+
+Page* pages[4] = {
+	&driverPage,
+    &vcuPage,
+    &bmsPage,
+    &reservedPage
+};
+uint8_t currentPageIndex = 0;
+Page* currentPage = pages[currentPageIndex];
 
 void setup()
 {
@@ -236,38 +267,30 @@ void setup()
 	delay(random(100, 200));
 	lcd.setCursor(0, 3);
 	lcd.print("Dash Ready! Race!");
+
+
+	sei(); // enable interrupts
+    i2c.setRecurring(old_tape, old_tape_size);
+    i2c.pushPriority(init_config);
+
+
 	delay(2000);
 	lcd.clear();
-	lcd.setCursor(4, 0);
-	lcd.print(" kmh");
-	lcd.setCursor(16, 0);
-	lcd.print(" rpm");
-	lcd.setCursor(0, 1);
-	lcd.print("Throttle: ");
-	lcd.setCursor(19, 1);
-	lcd.print("%");
-	lcd.setCursor(0, 2);
-	lcd.print("MCU Warn/Err: 0x");
-	lcd.setCursor(0, 3);
-	lcd.print("Odometer:         km");
+	currentPage->setup();
 }
+
+
+
 void loop()
 {
-	// Handle serial input for snake game controls
-	if (Serial.available())
-	{
-		uint8_t key = Serial.read();
-		if (encoder_count == 4)
-		{
-			if (key == 'w' || key == 'd' || key == 's' || key == 'a' || key == 'r')
-			{
-				last_key_pressed = key;
-			}
-		}
-	}
-
-	Pages[encoder_count].setup();
-
+	if (encoder_changed) {
+        currentPageIndex = (currentPageIndex + encoder_count) % 4;
+        currentPage = pages[currentPageIndex];
+        currentPage->setup();
+        encoder_changed = false;
+        encoder_count = 0;
+    }
+    currentPage->update();
 	hasStarted = (car.pedal.status.bits.car_status == CarStatus::Drive);
 	MCP2515::ERROR read_state = can_vcu.readMessage(&rx_frame);
 	if (read_state == MCP2515::ERROR_OK)
@@ -329,7 +352,7 @@ void loop()
 	if (millis() - lastLcdTick >= lcd_update::update_interval_ms)
 	{
 		odometer_integral += abs(motor_rpm);
-		page.update();
+		pages[encoder_count].update();
 		lastLcdTick += lcd_update::update_interval_ms;
 	}
 }

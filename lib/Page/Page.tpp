@@ -6,60 +6,47 @@
  * @date 2026-05-28
  * @see Page.hpp
  */
-
+#include <Arduino.h>
 #include "Page.hpp"
 #include <LiquidCrystal_I2C.h>
-
-
-
-
+#include <mcp2515.h>
 
 // === Page Abstract Base Class ===
 // Pure virtual methods must be implemented by derived classes.
 
-// === DashboardPage Implementation ===
+// ============================================================================
+// === DriverPage Implementation ===
+// ============================================================================
 
 /**
- * @brief Constructor for DashboardPage.
- * Initializes the dashboard with reference to LCD display.
- * @param led reference to LiquidCrystal_I2C display object.
+ * @brief Constructor for DriverMenuPage.
  */
-DashboardPage::Homescreen(LiquidCrystal_I2C& lcd, DashState& state) : lcd(lcd)
+DriverPage::DriverPage(LiquidCrystal_I2C& lcd, DashState& state)
+    : lcd(lcd), state(state)
 {
-    
 }
 
 /**
- * @brief Setup the dashboard page.
+ * @brief Setup the driver menu page.
  * Clears the LCD and initializes the dashboard layout.
  */
-void DashboardPage::setup()
+void DriverPage::setup()
 {
     #define char_locked 0
-#define char_deg 1
+    #define char_deg 1
 
-// Custom Char
-byte degCelsius[8] = { // degree celsius char
-	0b01000,
-	0b10100,
-	0b01000,
-	0b00011,
-	0b00100,
-	0b00100,
-	0b00100,
-	0b00011};
+	// Custom Char
+    byte byte_char_locked[8] = {
+        0b01110,
+        0b10001,
+        0b10001,
+        0b11111,
+        0b11011,
+        0b11011,
+        0b11011,
+        0b11111
+    };
 
-byte byte_char_locked[8] = {
-	0b01110,
-	0b10001,
-	0b10001,
-	0b11111,
-	0b11011,
-	0b11011,
-	0b11011,
-	0b11111};
-
-    lcd.clear();
     lcd.setCursor(4, 0);
 	lcd.print(" kmh");
 	lcd.setCursor(16, 0);
@@ -72,12 +59,11 @@ byte byte_char_locked[8] = {
 	lcd.print("MCU Warn/Err: 0x");
 	lcd.setCursor(0, 3);
 	lcd.print("Odometer:         km");
-	lcd.createChar(char_locked, byte_char_locked);
-    lcd.createChar(char_deg, degCelsius);
+    lcd.createChar(char_locked, byte_char_locked);
 }
 
 /**
- * @brief Update the dashboard page.
+ * @brief Update the driver menu page.
  * Called repeatedly to refresh vehicle data on display.
  * TODO: Implement with actual vehicle state data
  * - Update speed
@@ -86,7 +72,142 @@ byte byte_char_locked[8] = {
  * - Update odometer
  * - Update status indicators
  */
-void DashboardPage::update()
+void DriverPage::update()
 {
-    
+    // TODO: Implement vehicle data display
+}
+
+// ============================================================================
+// === VCUDebugPage Implementation ===
+// ============================================================================
+
+/**
+ * @brief Constructor for VCUDebugPage.
+ */
+VCUPage::VCUPage(LiquidCrystal_I2C& lcd, DashState& state)
+    : lcd(lcd), state(state)
+{
+}
+
+/**
+ * @brief Setup the VCU debug page.
+ * Displays VCU (Vehicle Control Unit) debug information.
+ */
+void VCUPage::setup()
+{
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("VCU Debug");
+    lcd.setCursor(0, 1);
+    lcd.print("Motor RPM:");
+    lcd.setCursor(0, 2);
+    lcd.print("Torque:");
+    lcd.setCursor(0, 3);
+    lcd.print("Status:");
+}
+
+/**
+ * @brief Update the VCU debug page.
+ * Called repeatedly to refresh VCU debug data on display.
+ * TODO: Implement with actual VCU diagnostic data
+ * - Display motor RPM values
+ * - Display torque values
+ * - Display VCU status codes
+ * - Display fault information
+ */
+void VCUPage::update()
+{
+
+}
+
+// ============================================================================
+// === BMSDebugPage Implementation ===
+// ============================================================================
+
+/**
+ * @brief Constructor for BMSDebugPage.
+ */
+BMSPage::BMSPage(LiquidCrystal_I2C& lcd, DashState& state)
+    : lcd(lcd), state(state)
+{
+}
+
+/**
+ * @brief Setup the BMS debug page.
+ * Displays BMS (Battery Management System) debug information.
+ */
+void BMSPage::setup()
+{
+	byte degCelsius[8] = { // degree celsius char
+        0b01000,
+        0b10100,
+        0b01000,
+        0b00011,
+        0b00100,
+        0b00100,
+        0b00100,
+        0b00011
+    };
+	lcd.createChar(char_deg, degCelsius);
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("BMS Debug");
+    lcd.setCursor(0, 1);
+    lcd.print("Voltage:");
+    lcd.setCursor(0, 2);
+    lcd.print("Current:");
+    lcd.setCursor(0, 3);
+    lcd.print("Status:");
+
+}
+
+/**
+ * @brief Update the BMS debug page.
+ * Called repeatedly to refresh BMS debug data on display.
+ * TODO: Implement with actual BMS diagnostic data
+ * - Display battery voltage
+ * - Display battery current
+ * - Display BMS status
+ * - Display cell temperatures
+ * - Display fault information
+ */
+void BMSPage::update()
+{
+    // TODO: Implement BMS debug data display
+}
+
+// ============================================================================
+// === ReservedPage Implementation ===
+// ============================================================================
+
+/**
+ * @brief Constructor for ReservedPage.
+ */
+ReservedPage::ReservedPage(LiquidCrystal_I2C& lcd, DashState& state)
+    : lcd(lcd), state(state)
+{
+}
+
+/**
+ * @brief Setup the reserved page.
+ * Placeholder for future page implementation.
+ */
+void ReservedPage::setup()
+{
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Reserved");
+    lcd.setCursor(0, 1);
+    lcd.print("Page");
+    lcd.setCursor(0, 2);
+    lcd.print("(Future Use)");
+}
+
+/**
+ * @brief Update the reserved page.
+ * Placeholder for future page updates.
+ */
+void ReservedPage::update()
+{
+    // TODO: Implement reserved page functionality
 }

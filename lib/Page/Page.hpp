@@ -13,7 +13,7 @@
 
 #include <stdint.h>
 #include <LiquidCrystal_I2C.h>
-class LiquidCrystal_I2C;
+
 
 /**
  * @brief Abstract Base Class for display pages.
@@ -39,26 +39,114 @@ public:
 };
 
 /**
- * @brief Dashboard page implementation.
+ * @brief Driver page (main dashboard).
  * Displays main vehicle information (speed, RPM, throttle, etc).
  */
 class DashState;
-class DashboardPage : public Page
+class DriverPage : public Page
 {
 public:
     /**
-     * @brief Constructor for DashboardPage.
-     * @param lcd Pointer to LiquidCrystal_I2C display object.
+     * @brief Constructor for DriverMenuPage.
+     * @param lcd Reference to LiquidCrystal_I2C display object.
+     * @param state Reference to DashState for vehicle data.
      */
-    DashboardPage(LiquidCrystal_I2C& lcd, DashState& state);
+    DriverPage(LiquidCrystal_I2C& lcd, DashState& state);
 
     /**
-     * @brief Setup the dashboard page.
+     * @brief Setup the driver menu page.
      */
     void setup() override;
 
     /**
-     * @brief Update the dashboard page.
+     * @brief Update the driver menu page.
+     */
+    void update() override;
+
+private:
+    LiquidCrystal_I2C& lcd;
+    DashState& state;
+};
+
+/**
+ * @brief VCU Debug page.
+ * Displays VCU (Vehicle Control Unit) debug information and diagnostics.
+ */
+class VCUPage : public Page
+{
+public:
+    /**
+     * @brief Constructor for VCUDebug.
+     * @param lcd Reference to LiquidCrystal_I2C display object.
+     * @param state Reference to DashState for vehicle data.
+     */
+    VCUPage(LiquidCrystal_I2C& lcd, DashState& state);
+
+    /**
+     * @brief Setup the VCU debug.
+     */
+    void setup() override;
+
+    /**
+     * @brief Update the VCU debug.
+     */
+    void update() override;
+
+private:
+    LiquidCrystal_I2C& lcd;
+    DashState& state;
+};
+
+/**
+ * @brief BMS Debug page.
+ * Displays BMS (Battery Management System) debug information and diagnostics.
+ */
+class BMSPage : public Page
+{
+public:
+    /**
+     * @brief Constructor for BMSDebug.
+     * @param lcd Reference to LiquidCrystal_I2C display object.
+     * @param state Reference to DashState for vehicle data.
+     */
+    BMSPage(LiquidCrystal_I2C& lcd, DashState& state);
+
+    /**
+     * @brief Setup the BMS debug.
+     */
+    void setup() override;
+
+    /**
+     * @brief Update the BMS debug.
+     */
+    void update() override;
+
+private:
+    LiquidCrystal_I2C& lcd;
+    DashState& state;
+};
+
+/**
+ * @brief Reserved page.
+ * Placeholder
+ */
+class ReservedPage : public Page
+{
+public:
+    /**
+     * @brief Constructor. 
+     * @param lcd Reference to LiquidCrystal_I2C display object.
+     * @param state Reference to DashState for vehicle data.
+     */
+    ReservedPage(LiquidCrystal_I2C& lcd, DashState& state);
+
+    /**
+     * @brief Setup.
+     */
+    void setup() override;
+
+    /**
+     * @brief Update.
      */
     void update() override;
 

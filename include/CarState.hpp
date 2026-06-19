@@ -161,5 +161,5 @@ struct CarState
     TelemetryFrameBms bms;     /**< Struct holding BMS telemetry data, ready for sending over CAN */
     uint32_t status_millis;    /**< Millisecond counter for the current car status (for state transitions) */
     uint32_t millis;           /**< Current time in milliseconds for the current loop iteration */
-};
+}car;
 #endif // CAR_STATE_HPP
