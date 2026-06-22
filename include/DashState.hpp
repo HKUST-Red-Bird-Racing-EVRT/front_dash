@@ -1,9 +1,10 @@
 /**
- * @file CarState.hpp
+ * @file DashState.hpp
  * @author Planeson, Red Bird Racing
- * @brief Definition of the CarState structure representing the state of the car
- * @version 1.4.1
- * @date 2026-02-09
+ * @brief Definition of the DashState structure representing the state of the car
+ * Changed to not send canframes
+ * @version 1.0
+ * @date 2026-05-30
  * @see can.h, Enums.h
  */
 
@@ -74,7 +75,7 @@ struct TelemetryFramePedal
      * @brief Converts the TelemetryFramePedal to a CAN frame.
      * @return CAN frame representing the Pedal telemetry signals.
      */
-    constexpr can_frame toCanFrame() const
+    constexpr can_frame const
     {
         return can_frame{
             TELEMETRY_PEDAL_MSG,               // can_id
@@ -95,7 +96,7 @@ struct TelemetryFramePedal
  */
 struct TelemetryFrameMotor
 {
-    int16_t torque_val;  /**< Torque value sent to motor controller*/
+    uint16_t torque_val;  /**< Torque value sent to motor controller*/
     uint16_t motor_rpm;   /**< Motor RPM */
     uint16_t motor_error; /**< Motor status byte */
     uint16_t motor_warn;  /**< Motor error/warning byte */
@@ -104,7 +105,7 @@ struct TelemetryFrameMotor
      * @brief Converts the TelemetryFrameMotor to a CAN frame.
      * @return CAN frame representing the telemetry motor signals.
      */
-    constexpr can_frame toCanFrame() const
+    constexpr can_frame const
     {
         return can_frame{
             TELEMETRY_MOTOR_MSG, // can_id
@@ -132,7 +133,7 @@ struct TelemetryFrameBms
      * @brief Converts the TelemetryFrameBms to a CAN frame.
      * @return CAN frame representing the telemetry BMS data.
      */
-    constexpr can_frame toCanFrame() const
+    constexpr can_frame const
     {
         return can_frame{
             TELEMETRY_BMS_MSG, // can_id
@@ -154,12 +155,10 @@ struct TelemetryFrameBms
  *
  * @see TelemetryFramePedal, TelemetryFrameMotor, TelemetryFrameBms
  */
-struct CarState
+struct DashState
 {
     TelemetryFramePedal pedal; /**< Struct holding pedal telemetry data, ready for sending over CAN */
     TelemetryFrameMotor motor; /**< Struct holding motor telemetry data, ready for sending over CAN */
     TelemetryFrameBms bms;     /**< Struct holding BMS telemetry data, ready for sending over CAN */
-    uint32_t status_millis;    /**< Millisecond counter for the current car status (for state transitions) */
-    uint32_t millis;           /**< Current time in milliseconds for the current loop iteration */
-}car;
-#endif // CAR_STATE_HPP
+};
+#endif // Dash0_State_HPP

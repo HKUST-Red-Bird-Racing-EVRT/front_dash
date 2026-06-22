@@ -86,5 +86,4 @@ enum class McpIndex : uint8_t
     Screen = 3 /** I2C LCD Screen, not MCP2515, fix later */
 };
 
-
 #endif // ENUMS_HPP

@@ -1,7 +1,7 @@
 /**
  * @file main.cpp
  * @brief This file contains the main functions for DASH of gen6 car
- * @note This code is intended for testing purposes only.
+ * Pages are switched via rotary encoder (INT0_vect ISR).
  */
 
 #include <Arduino.h>
@@ -10,38 +10,41 @@
 #include <SoftwareSerial.h>
 #include "pinMap.h"
 #include "CarState.hpp"
+#include "DashState.hpp"
+#include "Page.hpp"
+#include "Structs.h"
+#include "I2C.hpp"
 
-// Custom Char
-byte degCelsius[8] = { // degree celsius char
-	0b01000,
-	0b10100,
-	0b01000,
-	0b00011,
-	0b00100,
-	0b00100,
-	0b00100,
-	0b00011};
-
-byte byte_char_locked[8] = {
-	0b01110,
-	0b10001,
-	0b10001,
-	0b11111,
-	0b11011,
-	0b11011,
-	0b11011,
-	0b11111};
-#define char_locked 0
 
 can_frame rx_frame;
 int message_count = 0;
 uint8_t pot_buffer[8] = {0}; // Buffer for merged POT data (0x730 + 0x750)
 bool pot_730_ready = false;
 bool pot_750_ready = false;
+bool hasStarted = false;
+
+
+bool mode_changed, button_pushed;
+constexpr uint8_t old_tape_size = 5;
+constexpr uint8_t new_tape_size = 12;
+
+const I2cTransaction old_tape[old_tape_size];
+const I2cTransaction new_tape[new_tape_size];
+
+
+const I2cTransaction init_config;
+const I2cTransaction button_i2c_action;
+
+I2C<100, 8> i2c;
+
+ISR(TWI_vect){
+    i2c.handleIsr();
+}
 
 int16_t torque_val, motor_rpm = 0;
 uint16_t motor_warn, motor_error = 0; // Variable to store motor stuff
-uint32_t odometer_integral = 0;		  // Variable to store integral of RPM for odometer calculation
+uint16_t carstate = 0;
+uint32_t odometer_integral = 0; // Variable to store integral of RPM for odometer calculation
 
 namespace lcd_update
 {
@@ -98,7 +101,7 @@ namespace rpm_calc
 
 #define PIN_SHIFT_ENC_B PC1 ///< @brief Amount to shift for read
 
-constexpr int8_t NUM_PAGES = 4; 
+constexpr int8_t NUM_PAGES = 4;
 
 // I2C Communication Pins
 #define SDA_PIN PIN_PC4 ///< @brief SDA pin for I2C communication (PC4 - Analog 4)
@@ -141,6 +144,8 @@ MCP2515 can_ssru(CAN1_CS);
  *
  *
  */
+
+
 /**
  * @brief Arduino setup function.
  * @details It initializes serial communication
@@ -152,13 +157,13 @@ uint32_t lastCanReadTick = 0;
 int8_t write_counter = 0;
 MCP2515 cans[NUM_MCP] = {can_vcu, can_ssru};
 
-CarState car;
 
 
 volatile uint8_t encoder_count = 0;
 volatile bool encoder_changed = false;
 
-ISR(INT0_vect){
+ISR(INT0_vect)
+{
 	if (PINC & (1 << PIN_SHIFT_ENC_B))
 	{ // clockwise
 		++encoder_count;
@@ -170,16 +175,24 @@ ISR(INT0_vect){
 	encoder_changed = true;
 }
 
+Page* pages[4] = {
+	&driverPage,
+    &vcuPage,
+    &bmsPage,
+    &reservedPage
+};
+uint8_t currentPageIndex = 0;
+Page* currentPage = pages[currentPageIndex];
+
 void setup()
 {
 	pinMode(PIN_ENC_A, INPUT_PULLUP);
 	pinMode(PIN_ENC_B, INPUT);
 
-
 	cli();
 	EICRA |= (1 << ISC01);
 	EICRA &= ~(1 << ISC00);
-	
+
 	EIMSK |= (1 << INT0);
 	sei();
 
@@ -191,7 +204,6 @@ void setup()
 	lcd.backlight();
 	lcd.setCursor(0, 0);
 	lcd.print("Dash Init ");
-	lcd.createChar(char_locked, byte_char_locked);
 	for (int i = 0; i < 10; ++i)
 	{
 		delay(random(20, 100));
@@ -255,61 +267,55 @@ void setup()
 	delay(random(100, 200));
 	lcd.setCursor(0, 3);
 	lcd.print("Dash Ready! Race!");
+
+
+	sei(); // enable interrupts
+    i2c.setRecurring(old_tape, old_tape_size);
+    i2c.pushPriority(init_config);
+
+
 	delay(2000);
 	lcd.clear();
-	lcd.setCursor(4, 0);
-	lcd.print(" kmh");
-	lcd.setCursor(16, 0);
-	lcd.print(" rpm");
-	lcd.setCursor(0, 1);
-	lcd.print("Throttle: ");
-	lcd.setCursor(19, 1);
-	lcd.print("%");
-	lcd.setCursor(0, 2);
-	lcd.print("MCU Warn/Err: 0x");
-	lcd.setCursor(0, 3);
-	lcd.print("Odometer:         km");
+	currentPage->setup();
 }
+
+
+
 void loop()
 {
-	if (encoder_changed)
-	{
-		encoder_count = (encoder_count % NUM_PAGES + NUM_PAGES) % NUM_PAGES;
-		lcd.setCursor(10, 0);
-		lcd.print(encoder_count);
-	}
-	/*    int encA, encB;
-
-	if (test_mode) {
-		encA = test_encA;  // test values
-		encB = test_encB;
-		} else {
-			encA = digitalRead(PIN_PC0);  // actual pins
-			encB = digitalRead(PIN_PC1);
-		}
-		lcd.setCursor(0, 3);
-		lcd.print(millis());
-		*/
+	if (encoder_changed) {
+        currentPageIndex = (currentPageIndex + encoder_count) % 4;
+        currentPage = pages[currentPageIndex];
+        currentPage->setup();
+        encoder_changed = false;
+        encoder_count = 0;
+    }
+    currentPage->update();
+	hasStarted = (car.pedal.status.bits.car_status == CarStatus::Drive);
 	MCP2515::ERROR read_state = can_vcu.readMessage(&rx_frame);
 	if (read_state == MCP2515::ERROR_OK)
 	{
-		// if (test_encA==1){
-
 		uint8_t output = 0b10100000;
 		switch (rx_frame.can_id) // 20 20 200 ms counttime
 		{
 		case 0x700: // vcu pedals
 			car.pedal.status.byte = rx_frame.data[5];
 			car.pedal.faults.byte = rx_frame.data[6];
+			carstate = (rx_frame.data[5]);
 			break;
 		case 0x701: // vcu motors
 			torque_val = (rx_frame.data[1] << 8) | rx_frame.data[0];
 			motor_rpm = (rx_frame.data[3] << 8) | rx_frame.data[2];
-			motor_warn = (rx_frame.data[5] << 8) | rx_frame.data[4];
-			motor_error = (rx_frame.data[7] << 8) | rx_frame.data[6];
+			if (hasStarted)
+			{
+				motor_warn |= ((rx_frame.data[5] << 8) | rx_frame.data[4]);
+				motor_error |= ((rx_frame.data[7] << 8) | rx_frame.data[6]);
+			}
 			output += 1;
 			break;
 		case 0x710: // vcu bms
+			memcpy(bms.raw_data, rx_frame.data, 8);
+			bms.status = BmsStatus::Started;
 			output += 2;
 			break;
 		case 0x730: // front pot
@@ -342,177 +348,11 @@ void loop()
 			Serial.write(output);
 			Serial.write(rx_frame.data, 8);
 		}
-		/*
-
-		lcd.setCursor(0, 0);
-		lcd.print("ID:        ");
-		lcd.setCursor(3, 0);
-		lcd.print(rx_frame.can_id, HEX);
-		lcd.setCursor(0, 2);
-		for (uint8_t i = 0; i < rx_frame.can_dlc && i < 8; i++){
-			if (rx_frame.data[i] < 0x10)
-			lcd.print("0");
-			lcd.print(rx_frame.data[i], HEX);
-			}}
-			//    else if (test_encB==1){
-				lcd.clear();
-				lcd.setCursor(1,1);
-				lcd.print("encoder works");
-				lcd.setCursor(0, 0);
-				lcd.print("RPM: ");
-				lcd.print(motor_rpm,HEX);
-				delay(100);
-				lcd.clear();
-				}
-				//**  if (test_mode) {
-					//
-					//    if (millis() - lastChange >= 5000) {
-						//      if (test_encA == 1 && test_encB == 0) {
-							//        test_encA = 0;
-							//      test_encB = 1;  // Switch to second path
-			//} else {
-			  //  test_encA = 1;
-			  //test_encB = 0;  // Switch to first path
-			  //}
-			  //lastChange = millis();}
-			  */
 	}
 	if (millis() - lastLcdTick >= lcd_update::update_interval_ms)
 	{
-		static uint8_t lcd_update_state = 0;
 		odometer_integral += abs(motor_rpm);
-		switch (lcd_update_state)
-		{
-		case 0:
-		{
-			// speed
-			lcd.setCursor(0, 0);
-			uint8_t speed = abs(motor_rpm) / rpm_calc::RPM_TO_KMH_DIVISOR;
-			char speed_str[5];
-			speed_str[4] = '\0';
-			for (int i = 3; i >= 1; --i)
-			{
-				speed_str[i] = (speed % 10) + '0';
-				speed /= 10;
-			}
-			speed_str[0] = (motor_rpm >= 0) ? '+' : '-';
-			lcd.print(speed_str);
-			break;
-		}
-		case 1:
-		{
-			// motor rpm
-			lcd.setCursor(11, 0);
-			uint16_t rpm = (uint32_t)abs(motor_rpm) * rpm_calc::MAX_MOTOR_RPM / rpm_calc::MAX_MOTOR_RPM_READING;
-			char rpm_str[6];
-			rpm_str[5] = '\0';
-			for (int i = 4; i >= 1; --i)
-			{
-				rpm_str[i] = (rpm % 10) + '0';
-				rpm /= 10;
-			}
-			if (motor_rpm >= 0)
-			{
-				rpm_str[0] = '+';
-			}
-			else
-			{
-				rpm_str[0] = '-';
-			}
-			lcd.print(rpm_str);
-			break;
-		}
-		case 2:
-		{
-			// throttle percentage
-			lcd.setCursor(14, 1);
-			uint8_t throttle_percent = (uint32_t)(abs(torque_val) + 162) * 100 / 32500;
-			char throttle_str[5];
-			throttle_str[4] = '\0';
-			if (torque_val >= 0)
-			{
-				throttle_str[0] = '+';
-			}
-			else
-			{
-				throttle_str[0] = '-';
-			}
-			for (int i = 3; i >= 1; --i)
-			{
-				throttle_str[i] = (throttle_percent % 10) + '0';
-				throttle_percent /= 10;
-			}
-			lcd.print(throttle_str);
-			break;
-		}
-		case 3:
-		{
-			// motor warn/error
-			lcd.setCursor(16, 2);
-			lcd.print("00");
-			lcd.setCursor(16, 2);
-			lcd.print(motor_warn, HEX);
-			lcd.setCursor(18, 2);
-			lcd.print("00");
-			lcd.setCursor(18, 2);
-			lcd.print(motor_error, HEX);
-
-			// drive mode
-			lcd.setCursor(9, 0);
-			switch (car.pedal.status.bits.car_status)
-			{
-			case CarStatus::Init:
-			{
-				lcd.write(char_locked);
-				break;
-			}
-			case CarStatus::Startin:
-			{
-				lcd.print("S");
-				break;
-			}
-			case CarStatus::Bussin:
-			{
-				lcd.print("B");
-				break;
-			}
-			case CarStatus::Drive:
-			{
-				lcd.print("D");
-				break;
-			}
-			}
-			break;
-		}
-		case 4:
-		{
-			// odometer
-			constexpr uint8_t ODO_NUM_DIGITS = 6;
-			constexpr uint8_t ODO_DECIMAL_PLACES = rpm_calc::NUM_DECIMAL_PLACE;
-			constexpr uint8_t ODO_STR_LENGTH = ODO_NUM_DIGITS + 1 + 1; // digits + decimal point + null terminator
-			constexpr uint8_t ODO_POS_OFFSET = ODO_STR_LENGTH + 1 + 2; // odometer string + " km" right align padding
-			constexpr uint8_t STR_START_POS = 21 - ODO_POS_OFFSET;	   // right align the odometer reading
-			lcd.setCursor(STR_START_POS, 3);
-			uint32_t odometer = odometer_integral / rpm_calc::RPM_INTEGRAL_TO_KM_DIVISOR;
-			char odometer_str[ODO_STR_LENGTH];
-			odometer_str[ODO_STR_LENGTH - 1] = '\0';
-			for (int i = ODO_STR_LENGTH - 2; i >= 0; --i)
-			{
-				if (i == ODO_NUM_DIGITS - ODO_DECIMAL_PLACES)
-				{
-					odometer_str[i] = '.';
-				}
-				else
-				{
-					odometer_str[i] = (odometer % 10) + '0';
-					odometer /= 10;
-				}
-			}
-			lcd.print(odometer_str);
-			break;
-		}
-		}
-		lcd_update_state = (lcd_update_state + 1) % (lcd_update::update_items);
+		currentPage->;
 		lastLcdTick += lcd_update::update_interval_ms;
 	}
 }
