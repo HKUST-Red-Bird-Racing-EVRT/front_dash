@@ -8,11 +8,11 @@ on:
 jobs:
   # 1. Run the PlatformIO Build
   pio-build:
-    uses: your-username/shared-workflows/.github/workflows/reusable-platformio.yml@main
+    uses: HKUST-Red-Bird-Racing-EVRT/.github/.github/workflows/reusable-platformio.yml@main
 
   # 2. Deploy documentation if the build passes
   docs-deploy:
     needs: pio-build
-    uses: your-username/shared-workflows/.github/workflows/reusable-doxygen.yml@main
+    uses: HKUST-Red-Bird-Racing-EVRT/.github/.github/workflows/reusable-doxygen.yml@main
     secrets:
       deploy_token: ${{ secrets.GITHUB_TOKEN }}
