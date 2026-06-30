@@ -6,10 +6,20 @@
  * @date 2026-05-28
  * @see Page.hpp
  */
+#include "namespace.h"
 #include <Arduino.h>
 #include "Page.hpp"
 #include <LiquidCrystal_I2C.h>
 #include <mcp2515.h>
+
+
+
+// Current page pointer
+extern Page* currentPage;
+
+int16_t torque_val, motor_rpm = 0;
+uint16_t motor_warn, motor_error = 0; // Variable to store motor stuff
+uint32_t odometer_integral = 0; // Variable to store integral of RPM for odometer calculation
 
 // === Page Abstract Base Class ===
 // Pure virtual methods must be implemented by derived classes.
@@ -74,7 +84,7 @@ void DriverPage::setup()
  */
 void DriverPage::update()
 {
-    // TODO: Implement vehicle data display
+    
 }
 
 // ============================================================================
@@ -117,12 +127,70 @@ void VCUPage::setup()
  */
 void VCUPage::update()
 {
-
+   lcd.setCursor(0, 0);
+	uint8_t speed = abs(motor_rpm) / rpm_calc::RPM_TO_KMH_DIVISOR;
+	char speed_str[5];
+	speed_str[4] = '\0';
+	for (int i = 3; i >= 1; --i)
+	{
+	    speed_str[i] = (speed % 10) + '0';
+		speed /= 10;
+	}
+	speed_str[0] = (motor_rpm >= 0) ? '+' : '-';
+	lcd.print(speed_str);
+    lcd.setCursor(16, 2);
+	lcd.print("00");
+	lcd.setCursor(16, 2);
+	lcd.print(motor_warn, HEX);
+	lcd.setCursor(18, 2);
+	lcd.print("00");
+	lcd.setCursor(18, 2);
+	lcd.print(motor_error, HEX);
+			// drive mode
+	lcd.setCursor(9, 0);
+	switch (car.pedal.status.bits.car_status)
+	{
+	    case CarStatus::Init:
+		{
+		    lcd.write(char_locked);
+			break;
+		}
+	    case CarStatus::Startin:
+		{
+			lcd.print("S");
+			break;
+		}
+		case CarStatus::Bussin:
+		{
+			lcd.print("B");
+			break;
+		}
+		case CarStatus::Drive:
+		{
+			lcd.print("D");
+			break;
+		}
+}
+    lcd.setCursor(11, 0);
+	uint16_t rpm = (uint32_t)abs(motor_rpm) * rpm_calc::MAX_MOTOR_RPM / rpm_calc::MAX_MOTOR_RPM_READING;
+	char rpm_str[6];
+	rpm_str[5] = '\0';
+	for (int i = 4; i >= 1; --i)
+	{
+		rpm_str[i] = (rpm % 10) + '0';
+		rpm /= 10;
+	}
+	if (motor_rpm >= 0)
+	{
+		rpm_str[0] = '+';
+	}
+	else
+	{
+		rpm_str[0] = '-';
+	}
+	lcd.print(rpm_str);
 }
 
-// ============================================================================
-// === BMSDebugPage Implementation ===
-// ============================================================================
 
 /**
  * @brief Constructor for BMSDebugPage.

@@ -4,71 +4,91 @@
 #include <avr/io.h>
 #include <avr/interrupt.h>
 
-enum class I2cMode : uint8_t
-{
-    Write = 0,
-    Read = 1
-};
-
-enum class I2cState: uint8_t
-{
-    Idle = 0,
-    Busy = 1,
-    Hung = 2
-};
-
 struct I2cTransaction
 {
-    uint8_t address;
-    I2cMode mode;
-    uint8_t length;
-    volatile uint8_t processed_count;
-    const uint8_t *data;
+    const uint8_t address_and_mode;
+    const uint8_t length; /**< Stores the length of the data to be written/read. @note For read data, the length stores the length of ACK bytes, i.e. total read byte count - 1.*/
+    uint8_t *const data;
+    constexpr I2cTransaction(uint8_t address_and_mode_, uint8_t length_, uint8_t *data_);
 };
 
-template <uint16_t BITRATE_KBPS, uint8_t PRIORITY_SIZE>
+/**
+ * @brief I2C Master Driver class template. Provides a high-speed, interrupt-driven I2C master interface with priority and recurring transaction support.
+ * @details This class is designed for AVR microcontrollers and uses the TWI hardware module.
+ * It supports a priority queue for urgent transactions and a recurring queue for periodic tasks.
+ * The driver handles bus recovery in case of stuck conditions and provides a watchdog mechanism to detect bus hangs.
+ * Users create I2cTransaction objects and push them to the driver using pushPriority or pushRecurring.
+ * The priority queue is a ring buffer fifo.
+ * When a new transaction is chosen to be processed, the priority queue always asserts presidence over the recurring queue.
+ * The recurring queue works as a buffer that is flushed in a round-robin fashion, and is only processed when the priority queue is empty.
+ * The driver must be initialized with the init() method before use,
+ * and the pump() method should be called regularly in the main loop to provide a heartbeat for the watchdog, and to kickstart the bus when idle.
+ * The handleIsr() method must be called from the TWI_vect ISR to handle hardware events. See the example for usage.
+ * @attention You must wrap the call to handleIsr() in an ISR(TWI_vect) block, and you must enable global interrupts with sei() before using the driver.
+ *
+ * @tparam BITRATE_KBPS Bitrate in kbps for the I2C bus. Must be achievable for the given CPU frequency, else a static_assert will trigger.
+ * @tparam PRIORITY_SIZE Size of the priority queue. Must be a power of 2 and at least 2.
+ * @tparam RECURRING_SIZE Size of the recurring queue. Must be a power of 2 and at least 2.
+ * @tparam WATCHDOG_MAX_COUNT Maximum count for the watchdog timer before considering the bus hung. This is a measure of how many pump cycles can occur without activity before triggering recovery. If the main loop runs extremely quick, you should set this higher to avoid false positives.
+ */
+template <uint16_t BITRATE_KBPS, uint8_t PRIORITY_SIZE, uint8_t RECURRING_SIZE, uint8_t WATCHDOG_MAX_COUNT>
 class I2C
 {
     static_assert((PRIORITY_SIZE & (PRIORITY_SIZE - 1)) == 0, "PRIORITY_SIZE must be a strict power of 2!");
     static_assert(PRIORITY_SIZE >= 2, "PRIORITY_SIZE must be at least 2");
+    static_assert((RECURRING_SIZE & (RECURRING_SIZE - 1)) == 0, "RECURRING_SIZE must be a strict power of 2!");
+    static_assert(RECURRING_SIZE >= 2, "RECURRING_SIZE must be at least 2");
 
 public:
     constexpr I2C();
 
-    bool pushPriority(const I2cTransaction& new_queuer);
-    void setRecurring(const I2cTransaction* new_tape, const uint8_t size);
+    [[nodiscard]] constexpr bool pushPriority(const I2cTransaction &new_queuer);
+    [[nodiscard]] constexpr bool pushPriority(const uint8_t address_and_mode, const uint8_t length, uint8_t *const data);
+
+    constexpr bool pushRecurring(const I2cTransaction &new_queuer);
+    constexpr bool pushRecurring(const uint8_t address_and_mode, const uint8_t length, uint8_t *const data);
 
     void pump();
 
-    void handleIsr();
+    inline void handleIsr();
 
 private:
     constexpr void init();
-    void process(const I2cTransaction &);
+    inline void finishIsr();
+    inline void restartIsr();
     void recoverBus();
 
     // priority queue
     I2cTransaction priority_queue[PRIORITY_SIZE];
-    volatile uint8_t priority_head = 0;
-    volatile uint8_t priority_tail = 0;
-    static constexpr uint8_t PRIORITY_MASK = PRIORITY_SIZE - 1; 
+    volatile uint8_t priority_write_index = 0;
+    volatile uint8_t priority_read_index = 0;
+    static constexpr uint8_t PRIORITY_MASK = PRIORITY_SIZE - 1;
 
-    // recurring tape
-    const I2cTransaction* recurring_tape = nullptr;
+    // recurring queue
+    I2cTransaction recurring_queue[RECURRING_SIZE];
+    uint8_t recurring_size = 0;
     volatile uint8_t recurring_index = 0;
-    volatile uint8_t recurring_size = 0;
+    static constexpr uint8_t RECURRING_MASK = RECURRING_SIZE - 1;
 
     // state machine tracking
-    I2cTransaction* active_job = nullptr;
-    volatile uint8_t active_index = 0;
+    enum class I2cState : uint8_t
+    {
+        Idle = 0,
+        Busy = 1,
+        Hung = 2
+    };
+
+    I2cTransaction *active_job = nullptr;
+    volatile uint8_t active_byte_index = 0;
     volatile bool active_job_is_priority = false;
     volatile I2cState bus_state = I2cState::Idle;
 
     // watchdog
+    volatile uint8_t watchdog_pulsed = false;
     uint8_t watchdog_count = 0;
 
     // stuck bus recovery
-    enum class RecoveryState: uint8_t
+    enum class RecoveryState : uint8_t
     {
         Init = 0,
         ClockLow = 1,
@@ -78,6 +98,22 @@ private:
 
     RecoveryState recovery_state = RecoveryState::Init;
     uint8_t recovery_count = 0;
+
+    enum class I2cStatus : uint8_t
+    {
+        Start = 0x08,
+        RepeatedStart = 0x10,
+        AddressWriteAck = 0x18,
+        AddressWriteNack = 0x20,
+        DataSentAck = 0x28,
+        DataSentNack = 0x30,
+        ArbitrationLost = 0x38,
+        AddressReadAck = 0x40,
+        AddressReadNack = 0x48,
+        DataReadAck = 0x50,
+        DataReadNack = 0x58
+        // slave modes not implemented
+    };
 };
 
 #include "I2C.tpp"

@@ -11,6 +11,8 @@
 #ifndef PAGE_HPP
 #define PAGE_HPP
 
+#include "namespace.h"
+#include "Structs.h"
 #include <stdint.h>
 #include <LiquidCrystal_I2C.h>
 
@@ -42,7 +44,11 @@ public:
  * @brief Driver page (main dashboard).
  * Displays main vehicle information (speed, RPM, throttle, etc).
  */
-class DashState;
+
+extern DashState dashState; // Global instance of DashState for vehicle data
+
+
+
 class DriverPage : public Page
 {
 public:
@@ -154,6 +160,13 @@ private:
     LiquidCrystal_I2C& lcd;
     DashState& state;
 };
+
+// Page instances
+DriverPage driverPage;VCUPage vcuPage;
+BMSPage bmsPage;
+ReservedPage reservedPage;
+
+
 
 #include "Page.tpp" // implementation
 

@@ -14,7 +14,7 @@
 #include "Page.hpp"
 #include "Structs.h"
 #include "I2C.hpp"
-
+#include "namespace.h"
 
 can_frame rx_frame;
 int message_count = 0;
@@ -24,70 +24,11 @@ bool pot_750_ready = false;
 bool hasStarted = false;
 
 
-bool mode_changed, button_pushed;
-constexpr uint8_t old_tape_size = 5;
-constexpr uint8_t new_tape_size = 12;
-
-const I2cTransaction old_tape[old_tape_size];
-const I2cTransaction new_tape[new_tape_size];
-
-
-const I2cTransaction init_config;
-const I2cTransaction button_i2c_action;
-
-I2C<100, 8> i2c;
-
-ISR(TWI_vect){
-    i2c.handleIsr();
-}
-
-int16_t torque_val, motor_rpm = 0;
-uint16_t motor_warn, motor_error = 0; // Variable to store motor stuff
 uint16_t carstate = 0;
-uint32_t odometer_integral = 0; // Variable to store integral of RPM for odometer calculation
 
-namespace lcd_update
-{
-	constexpr uint8_t cycle_rate = 4; // lcd hz
-	constexpr uint8_t update_items = 5;
-	constexpr uint8_t update_count = cycle_rate * update_items;
 
-	static_assert((1000 / update_count) * update_count == 1000, "update_count must be a factor of 1000 to avoid truncation.");
 
-	constexpr uint8_t update_interval_ms = 1000 / update_count;
-}
-namespace rpm_calc
-{
-	constexpr uint32_t ipow(uint32_t base, unsigned exp)
-	{
-		return exp == 0 ? 1u : base * ipow(base, exp - 1);
-	}
 
-	constexpr uint8_t GEAR_RATIO_NUMERATOR = 50;   /**< Gear ratio numerator of the drivetrain. */
-	constexpr uint8_t GEAR_RATIO_DENOMINATOR = 13; /**< Gear ratio denominator of the drivetrain. */
-
-	// === Calculation for RPM threshold ===
-	constexpr uint16_t WHEEL_DIAMETER_MM = 455;		  /**< Wheel diameter in millimeters (actual recorded). */
-	constexpr uint16_t MAX_MOTOR_RPM = 7000;		  /**< Maximum motor RPM. */
-	constexpr uint16_t MAX_MOTOR_RPM_READING = 32767; /**< Maximum motor RPM reading from CAN (2^15 - 1 for signed 16-bit). */
-	constexpr uint16_t MAX_TORQUE_VAL = 32767;		  /**< Maximum torque value for motor controller. */
-
-	constexpr uint32_t MM_PER_KM = (uint32_t)1000 * 1000;					 /**< Millimeters per kilometer. */
-	constexpr uint8_t MINUTES_PER_HOUR = 60;								 /**< Minutes per hour. */
-	constexpr uint16_t SECONDS_PER_HOUR = 3600;								 /**< Seconds per hour. */
-	constexpr uint8_t NUM_DECIMAL_PLACE = 5;								 /**< Number of decimal places (added 4 to become meter) */
-	constexpr uint32_t FIXED_POINT_MULTIPLIER = ipow(10, NUM_DECIMAL_PLACE); /**< Multiplier to adjust for decimal places */
-	constexpr double PI_ = 3.1415926535897932384626433832795;				 /**< Value of pi, unnamed to avoid clashing with Arduino.h's definition. */
-
-	/** Divide by this constant to get  */
-	constexpr uint16_t RPM_TO_KMH_DIVISOR = (double)MAX_TORQUE_VAL / MAX_MOTOR_RPM /
-												WHEEL_DIAMETER_MM / PI_ * MM_PER_KM / MINUTES_PER_HOUR / GEAR_RATIO_DENOMINATOR * GEAR_RATIO_NUMERATOR +
-											0.5f;
-	constexpr uint32_t RPM_INTEGRAL_TO_KM_DIVISOR = (double)MAX_TORQUE_VAL / MAX_MOTOR_RPM /
-														WHEEL_DIAMETER_MM / PI_ * MM_PER_KM / MINUTES_PER_HOUR / GEAR_RATIO_DENOMINATOR * GEAR_RATIO_NUMERATOR *
-														lcd_update::update_count * SECONDS_PER_HOUR / FIXED_POINT_MULTIPLIER +
-													0.5f;
-}
 
 // Define pin assignment using actual Arduino pin numbers
 // SPI Pins for CAN Controllers (MCP2515)
@@ -269,10 +210,6 @@ void setup()
 	lcd.print("Dash Ready! Race!");
 
 
-	sei(); // enable interrupts
-    i2c.setRecurring(old_tape, old_tape_size);
-    i2c.pushPriority(init_config);
-
 
 	delay(2000);
 	lcd.clear();
@@ -286,6 +223,11 @@ void loop()
 	if (encoder_changed) {
         currentPageIndex = (currentPageIndex + encoder_count) % 4;
         currentPage = pages[currentPageIndex];
+		lcd.clear();
+		for(int i=0;i<4;i++){
+			lcd.setCursor(i,20);
+			lcd.print(++i);
+		}
         currentPage->setup();
         encoder_changed = false;
         encoder_count = 0;
@@ -352,7 +294,7 @@ void loop()
 	if (millis() - lastLcdTick >= lcd_update::update_interval_ms)
 	{
 		odometer_integral += abs(motor_rpm);
-		pages[encoder_count].update();
 		lastLcdTick += lcd_update::update_interval_ms;
+		currentPage->update();
 	}
 }
