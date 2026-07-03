@@ -12,9 +12,10 @@
 #define PAGE_HPP
 
 #include "namespace.h"
-#include "Structs.h"
 #include <stdint.h>
 #include <LiquidCrystal_I2C.h>
+
+struct DashState;
 
 
 /**
@@ -161,10 +162,7 @@ private:
     DashState& state;
 };
 
-// Page instances
-DriverPage driverPage;VCUPage vcuPage;
-BMSPage bmsPage;
-ReservedPage reservedPage;
+
 
 
 

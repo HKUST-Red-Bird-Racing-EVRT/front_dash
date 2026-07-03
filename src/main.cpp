@@ -9,7 +9,6 @@
 #include <LiquidCrystal_I2C.h>
 #include <SoftwareSerial.h>
 #include "pinMap.h"
-#include "CarState.hpp"
 #include "DashState.hpp"
 #include "Page.hpp"
 #include "Structs.h"
@@ -26,7 +25,14 @@ bool hasStarted = false;
 
 uint16_t carstate = 0;
 
+LiquidCrystal_I2C lcd(0x27, 20, 4);
 
+// Page instances
+DashState dashState;
+DriverPage driverPage(lcd, dashState);
+VCUPage vcuPage(lcd, dashState);
+BMSPage bmsPage(lcd, dashState);
+ReservedPage reservedPage(lcd, dashState);
 
 
 
@@ -91,7 +97,6 @@ MCP2515 can_ssru(CAN1_CS);
  * @brief Arduino setup function.
  * @details It initializes serial communication
  */
-LiquidCrystal_I2C lcd(0x27, 20, 4);
 // update ticks
 uint32_t lastLcdTick = 0;
 uint32_t lastCanReadTick = 0;

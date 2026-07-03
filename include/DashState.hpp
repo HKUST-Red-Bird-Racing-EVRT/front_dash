@@ -8,8 +8,8 @@
  * @see can.h, Enums.h
  */
 
-#ifndef CAR_STATE_HPP
-#define CAR_STATE_HPP
+#ifndef DASH_STATE_HPP
+#define DASH_STATE_HPP
 
 #include "Enums.hpp"
 #include <can.h>
@@ -18,6 +18,8 @@
 constexpr canid_t TELEMETRY_PEDAL_MSG = 0x700; /**< Telemetry: Pedal readings message */
 constexpr canid_t TELEMETRY_MOTOR_MSG = 0x701; /**< Telemetry: Digital signals message */
 constexpr canid_t TELEMETRY_BMS_MSG = 0x710;   /**< Telemetry: Car state message */
+
+
 
 /**
  * @brief Telemetry frame structure for the Pedals.
@@ -75,7 +77,7 @@ struct TelemetryFramePedal
      * @brief Converts the TelemetryFramePedal to a CAN frame.
      * @return CAN frame representing the Pedal telemetry signals.
      */
-    constexpr can_frame const
+    constexpr can_frame toCanFrame() const
     {
         return can_frame{
             TELEMETRY_PEDAL_MSG,               // can_id
@@ -91,6 +93,7 @@ struct TelemetryFramePedal
     }
 };
 
+
 /**
  * @brief Telemetry frame structure for motor signals.
  */
@@ -105,7 +108,7 @@ struct TelemetryFrameMotor
      * @brief Converts the TelemetryFrameMotor to a CAN frame.
      * @return CAN frame representing the telemetry motor signals.
      */
-    constexpr can_frame const
+    constexpr can_frame toCanFrame() const
     {
         return can_frame{
             TELEMETRY_MOTOR_MSG, // can_id
@@ -133,7 +136,7 @@ struct TelemetryFrameBms
      * @brief Converts the TelemetryFrameBms to a CAN frame.
      * @return CAN frame representing the telemetry BMS data.
      */
-    constexpr can_frame const
+    constexpr can_frame toCanFrame() const
     {
         return can_frame{
             TELEMETRY_BMS_MSG, // can_id
@@ -160,5 +163,6 @@ struct DashState
     TelemetryFramePedal pedal; /**< Struct holding pedal telemetry data, ready for sending over CAN */
     TelemetryFrameMotor motor; /**< Struct holding motor telemetry data, ready for sending over CAN */
     TelemetryFrameBms bms;     /**< Struct holding BMS telemetry data, ready for sending over CAN */
-};
-#endif // Dash0_State_HPP
+}car;
+
+#endif // DASH_STATE_HPP

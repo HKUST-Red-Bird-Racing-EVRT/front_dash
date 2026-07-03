@@ -1,12 +1,10 @@
 
-#include <stdint.h>
-#include "Enums.hpp"
-#include "Page.hpp"
-#include "DashState.hpp"
-#include <cstdint>
-
 #ifndef STRUCTS_H
 #define STRUCTS_H
+
+#include <stdint.h>
+#include <LiquidCrystal_I2C.h>
+#include "Enums.hpp"
 
 
 struct RadioFrame{
@@ -34,7 +32,7 @@ struct DashData{
 };
 
 
-extern LiquidCrystal_I2C lcd(0x27, 20, 4);
+extern LiquidCrystal_I2C lcd;
 
 // BMS State
 struct BmsData

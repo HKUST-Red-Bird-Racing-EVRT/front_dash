@@ -17,6 +17,7 @@
 // Current page pointer
 extern Page* currentPage;
 
+
 int16_t torque_val, motor_rpm = 0;
 uint16_t motor_warn, motor_error = 0; // Variable to store motor stuff
 uint32_t odometer_integral = 0; // Variable to store integral of RPM for odometer calculation
