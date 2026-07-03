@@ -299,7 +299,6 @@ void loop()
 	if (millis() - lastLcdTick >= lcd_update::update_interval_ms)
 	{
 		odometer_integral += abs(motor_rpm);
-		pages[encoder_count].update();
 		lastLcdTick += lcd_update::update_interval_ms;
 		currentPage->update();
 	}
