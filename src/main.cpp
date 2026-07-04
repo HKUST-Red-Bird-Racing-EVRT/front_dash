@@ -105,6 +105,60 @@ MCP2515 cans[NUM_MCP] = {can_vcu, can_ssru};
 
 
 
+byte num1_inverted[8] = {
+	0b11011, 
+	0b10011,
+	0b11011, 
+	0b11011, 
+	0b11011, 
+	0b11011, 
+	0b10001, 
+	0b11111 };
+byte num2_inverted[8] = { 
+	0b10001, 
+	0b11101, 
+	0b11101, 
+	0b11011, 
+	0b10111, 
+	0b10111, 
+	0b10000, 
+	0b11111 };
+byte num3_inverted[8] = { 
+	0b10001, 
+	0b11101, 
+	0b11101, 
+	0b11001, 
+	0b11101, 
+	0b11101, 
+	0b10001, 
+	0b11111 };
+byte num4_inverted[8] = { 
+	0b11101, 
+	0b11001, 
+	0b10101, 
+	0b10000, 
+	0b11101, 
+	0b11101, 
+	0b11101, 
+	0b11111 };
+
+void drawPageIndicators(int currentPage) {
+    lcd.setCursor(19, 0);
+    if (currentPage == 0) lcd.write(byte(0)); // Inverted 1
+    else lcd.print("1");                      // Normal 1
+    lcd.setCursor(19, 1);
+    if (currentPage == 1) lcd.write(byte(0)); // Inverted 2
+    else lcd.print("2");                      // Normal 2
+    lcd.setCursor(19, 2);
+    if (currentPage == 2) lcd.write(byte(0)); // Inverted 3
+    else lcd.print("3");                      // Normal 3
+    lcd.setCursor(19, 3);
+    if (currentPage == 3) lcd.write(byte(0)); // Inverted 4
+    else lcd.print("4");                      // Normal 4
+}
+
+
+
 volatile uint8_t encoder_count = 0;
 volatile bool encoder_changed = false;
 
@@ -150,6 +204,10 @@ void setup()
 	lcd.backlight();
 	lcd.setCursor(0, 0);
 	lcd.print("Dash Init ");
+	lcd.createChar(0, num1_inverted);
+    lcd.createChar(1, num2_inverted);
+    lcd.createChar(2, num3_inverted);
+    lcd.createChar(3, num4_inverted);
 	for (int i = 0; i < 10; ++i)
 	{
 		delay(random(20, 100));
@@ -237,7 +295,6 @@ void loop()
         encoder_changed = false;
         encoder_count = 0;
     }
-    currentPage->update();
 	hasStarted = (car.pedal.status.bits.car_status == CarStatus::Drive);
 	MCP2515::ERROR read_state = can_vcu.readMessage(&rx_frame);
 	if (read_state == MCP2515::ERROR_OK)
@@ -301,5 +358,6 @@ void loop()
 		odometer_integral += abs(motor_rpm);
 		lastLcdTick += lcd_update::update_interval_ms;
 		currentPage->update();
+		drawPageIndicators(currentPageIndex%4);
 	}
 }

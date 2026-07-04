@@ -58,10 +58,10 @@ void DriverPage::setup()
         0b11111
     };
 
-    lcd.setCursor(4, 0);
-	lcd.print(" kmh");
+    lcd.setCursor(0, 0);
+	lcd.print("kmh:");
 	lcd.setCursor(16, 0);
-	lcd.print(" rpm");
+	lcd.print("rpm:");
 	lcd.setCursor(0, 1);
 	lcd.print("Throttle: ");
 	lcd.setCursor(19, 1);
@@ -69,7 +69,9 @@ void DriverPage::setup()
 	lcd.setCursor(0, 2);
 	lcd.print("MCU Warn/Err: 0x");
 	lcd.setCursor(0, 3);
-	lcd.print("Odometer:         km");
+	lcd.print("     km");
+	lcd.setCursor(13, 3);
+	lcd.print("B    %");
     lcd.createChar(char_locked, byte_char_locked);
 }
 
@@ -85,7 +87,62 @@ void DriverPage::setup()
  */
 void DriverPage::update()
 {
-    
+	lcd.setCursor(9, 0);
+    switch (car.pedal.status.bits.car_status)
+	{
+	    case CarStatus::Init:
+		{
+		    lcd.write(char_locked);
+			break;
+		}
+	    case CarStatus::Startin:
+		{
+			lcd.print("S");
+			break;
+		}
+		case CarStatus::Bussin:
+		{
+			lcd.print("B");
+			break;
+		}
+		case CarStatus::Drive:
+		{
+			lcd.print("D");
+			break;
+		}}
+		lcd.setCursor(0, 0);
+		uint8_t speed = abs(motor_rpm) / rpm_calc::RPM_TO_KMH_DIVISOR;
+		char speed_str[5];
+		speed_str[4] = '\0';
+		for (uint8_t i = 3; i >= 1; --i)
+		{
+			speed_str[i] = (speed % 10) + '0';
+			speed /= 10;
+		}
+	speed_str[0] = (motor_rpm >= 0) ? '+' : '-';
+	lcd.print(speed_str);
+	constexpr uint8_t ODO_NUM_DIGITS = 6;
+	constexpr uint8_t ODO_DECIMAL_PLACES = rpm_calc::NUM_DECIMAL_PLACE;
+	constexpr uint8_t ODO_STR_LENGTH = ODO_NUM_DIGITS + 1 + 1; // digits + decimal point + null terminator
+	constexpr uint8_t ODO_POS_OFFSET = ODO_STR_LENGTH + 1 + 2; // odometer string + " km" right align padding
+	constexpr uint8_t STR_START_POS = 21 - ODO_POS_OFFSET;	   // right align the odometer reading
+	lcd.setCursor(STR_START_POS, 3);
+	uint32_t odometer = odometer_integral / rpm_calc::RPM_INTEGRAL_TO_KM_DIVISOR;
+	char odometer_str[ODO_STR_LENGTH];
+	odometer_str[ODO_STR_LENGTH - 1] = '\0';
+	for (int8_t i = ODO_STR_LENGTH - 2; i >= 0; --i)
+	{
+		if (i == ODO_NUM_DIGITS - ODO_DECIMAL_PLACES)
+		{
+			odometer_str[i] = '.';
+		}
+		else
+		{
+			odometer_str[i] = (odometer % 10) + '0';
+			odometer /= 10;
+		}
+	}
+	lcd.print(odometer_str);
 }
 
 // ============================================================================
@@ -128,17 +185,6 @@ void VCUPage::setup()
  */
 void VCUPage::update()
 {
-   lcd.setCursor(0, 0);
-	uint8_t speed = abs(motor_rpm) / rpm_calc::RPM_TO_KMH_DIVISOR;
-	char speed_str[5];
-	speed_str[4] = '\0';
-	for (int i = 3; i >= 1; --i)
-	{
-	    speed_str[i] = (speed % 10) + '0';
-		speed /= 10;
-	}
-	speed_str[0] = (motor_rpm >= 0) ? '+' : '-';
-	lcd.print(speed_str);
     lcd.setCursor(16, 2);
 	lcd.print("00");
 	lcd.setCursor(16, 2);
@@ -147,36 +193,12 @@ void VCUPage::update()
 	lcd.print("00");
 	lcd.setCursor(18, 2);
 	lcd.print(motor_error, HEX);
-			// drive mode
-	lcd.setCursor(9, 0);
-	switch (car.pedal.status.bits.car_status)
-	{
-	    case CarStatus::Init:
-		{
-		    lcd.write(char_locked);
-			break;
-		}
-	    case CarStatus::Startin:
-		{
-			lcd.print("S");
-			break;
-		}
-		case CarStatus::Bussin:
-		{
-			lcd.print("B");
-			break;
-		}
-		case CarStatus::Drive:
-		{
-			lcd.print("D");
-			break;
-		}
-}
-    lcd.setCursor(11, 0);
+    			// motor rpm
+	lcd.setCursor(11, 0);
 	uint16_t rpm = (uint32_t)abs(motor_rpm) * rpm_calc::MAX_MOTOR_RPM / rpm_calc::MAX_MOTOR_RPM_READING;
 	char rpm_str[6];
 	rpm_str[5] = '\0';
-	for (int i = 4; i >= 1; --i)
+	for (uint8_t i = 4; i >= 1; --i)
 	{
 		rpm_str[i] = (rpm % 10) + '0';
 		rpm /= 10;
@@ -219,15 +241,14 @@ void BMSPage::setup()
     };
 	lcd.createChar(char_deg, degCelsius);
     lcd.clear();
-    lcd.setCursor(0, 0);
-    lcd.print("BMS Debug");
     lcd.setCursor(0, 1);
-    lcd.print("Voltage:");
+    lcd.print("BMS Debug:");
     lcd.setCursor(0, 2);
+    lcd.print("Voltage:");
+    lcd.setCursor(0, 3);
     lcd.print("Current:");
     lcd.setCursor(0, 3);
     lcd.print("Status:");
-
 }
 
 /**
@@ -242,7 +263,31 @@ void BMSPage::setup()
  */
 void BMSPage::update()
 {
-    // TODO: Implement BMS debug data display
+    lcd.setCursor(11, 1);
+	char vcu_text[5]="    ";
+	vcu_text[3] = (car.pedal.faults.byte % 16 > 9) ? (car.pedal.faults.byte % 16 - 10 + 'A') : (car.pedal.faults.byte % 16 + '0');
+	vcu_text[2] = (car.pedal.faults.byte/16 % 16 > 9) ? (car.pedal.faults.byte/16 % 16 - 10 + 'A') : (car.pedal.faults.byte/16 % 16 + '0');
+	vcu_text[1] = (car.pedal.status.byte % 16 > 9) ? (car.pedal.status.byte % 16 - 10 + 'A') : (car.pedal.status.byte % 16 + '0');
+	vcu_text[0] = (car.pedal.status.byte/16 % 16 > 9) ? (car.pedal.status.byte/16 % 16 - 10 + 'A') : (car.pedal.status.byte/16 % 16 + '0');
+	lcd.setCursor(0,3);
+	lcd.print(vcu_text);
+	char adc[17] = "                ";
+	adc[16] = '\0';
+	uint16_t values[4] = {car.pedal.apps_5v, car.pedal.apps_3v3, car.pedal.brake, car.pedal.hall_sensor};
+	for (uint8_t i = 0; i < 4; ++i)
+	{
+		for (uint8_t j = 3; j > 0; --j)
+		{
+			adc[4 * i + j - 1] = (values[i] % 16 > 9) ? (values[i] % 16 - 10 + 'A') : (values[i] % 16 + '0');
+			values[i] /= 16;
+			if (!values[i])
+				break;
+		}
+	}
+    // temp
+	lcd.setCursor(0, 2);
+	lcd.print(adc);
+
 }
 
 // ============================================================================
