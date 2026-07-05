@@ -70,6 +70,14 @@ public:
      */
     void update() override;
 
+    void updatepwr();
+
+    void updaterpm();
+
+    void update_car_spd();
+
+    void updateodo();
+
 private:
     LiquidCrystal_I2C& lcd;
     DashState& state;
@@ -137,7 +145,7 @@ private:
  * @brief Reserved page.
  * Placeholder
  */
-class ReservedPage : public Page
+class DefaultPage : public Page
 {
 public:
     /**
@@ -145,7 +153,7 @@ public:
      * @param lcd Reference to LiquidCrystal_I2C display object.
      * @param state Reference to DashState for vehicle data.
      */
-    ReservedPage(LiquidCrystal_I2C& lcd, DashState& state);
+    DefaultPage(LiquidCrystal_I2C& lcd, DashState& state);
 
     /**
      * @brief Setup.

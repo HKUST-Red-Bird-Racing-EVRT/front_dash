@@ -73,11 +73,8 @@ struct TelemetryFramePedal
     StateByteStatus status; /**< Car Status */
     StateByteFaults faults; /**< Pedal Faults */
 
-    /**
-     * @brief Converts the TelemetryFramePedal to a CAN frame.
-     * @return CAN frame representing the Pedal telemetry signals.
-     */
-    constexpr can_frame toCanFrame() const
+
+    constexpr can_frame fromCanFrame() const
     {
         return can_frame{
             TELEMETRY_PEDAL_MSG,               // can_id
@@ -104,11 +101,7 @@ struct TelemetryFrameMotor
     uint16_t motor_error; /**< Motor status byte */
     uint16_t motor_warn;  /**< Motor error/warning byte */
 
-    /**
-     * @brief Converts the TelemetryFrameMotor to a CAN frame.
-     * @return CAN frame representing the telemetry motor signals.
-     */
-    constexpr can_frame toCanFrame() const
+    constexpr can_frame fromCanFrame() const
     {
         return can_frame{
             TELEMETRY_MOTOR_MSG, // can_id
@@ -132,12 +125,8 @@ struct TelemetryFrameBms
 
     uint8_t bms_data[8]; /**< Raw BMS data bytes */
 
-    /**
-     * @brief Converts the TelemetryFrameBms to a CAN frame.
-     * @return CAN frame representing the telemetry BMS data.
-     */
-    constexpr can_frame toCanFrame() const
-    {
+
+    constexpr can_frame fromCanFrame() const {
         return can_frame{
             TELEMETRY_BMS_MSG, // can_id
             8,                 // can_dlc
@@ -149,8 +138,7 @@ struct TelemetryFrameBms
             bms_data[5],
             bms_data[6],
             bms_data[7]};
-    }
-};
+    }}telembms;
 
 /**
  * @brief Represents the state of the car.

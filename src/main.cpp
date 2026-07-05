@@ -32,7 +32,7 @@ DashState dashState;
 DriverPage driverPage(lcd, dashState);
 VCUPage vcuPage(lcd, dashState);
 BMSPage bmsPage(lcd, dashState);
-ReservedPage reservedPage(lcd, dashState);
+DefaultPage defaultPage(lcd, dashState);
 
 
 
@@ -141,19 +141,60 @@ byte num4_inverted[8] = {
 	0b11101, 
 	0b11101, 
 	0b11111 };
+	constexpr byte CHAR_LOCKED = 0;
+    constexpr byte CHAR_DEG = 1;
+	constexpr byte CHAR_PWR = 2;
+    constexpr byte PAGE_INDICATOR_1 = 3;
+    constexpr byte PAGE_INDICATOR_2 = 4;
+    constexpr byte PAGE_INDICATOR_3 = 5;
+    constexpr byte PAGE_INDICATOR_4 = 6;
+
+
+	// Custom Char
+    byte byte_char_locked[8] = {
+        0b01110,
+        0b10001,
+        0b10001,
+        0b11111,
+        0b11011,
+        0b11011,
+        0b11011,
+        0b11111
+    };
+	byte byte_pwr[8] = {
+        0b11111,
+        0b11111,
+        0b11111,
+        0b11111,
+        0b11111,
+        0b11111,
+        0b11111,
+        0b11111
+    };
+	byte degCelsius[8] = { // degree celsius char
+        0b01000,
+        0b10100,
+        0b01000,
+        0b00011,
+        0b00100,
+        0b00100,
+        0b00100,
+        0b00011
+    };
+
 
 void drawPageIndicators(int currentPage) {
     lcd.setCursor(19, 0);
-    if (currentPage == 0) lcd.write(byte(0)); // Inverted 1
+    if (currentPage == 0) lcd.write(PAGE_INDICATOR_1); // Inverted 1
     else lcd.print("1");                      // Normal 1
     lcd.setCursor(19, 1);
-    if (currentPage == 1) lcd.write(byte(0)); // Inverted 2
+    if (currentPage == 1) lcd.write(PAGE_INDICATOR_2); // Inverted 2
     else lcd.print("2");                      // Normal 2
     lcd.setCursor(19, 2);
-    if (currentPage == 2) lcd.write(byte(0)); // Inverted 3
+    if (currentPage == 2) lcd.write(PAGE_INDICATOR_3); // Inverted 3
     else lcd.print("3");                      // Normal 3
     lcd.setCursor(19, 3);
-    if (currentPage == 3) lcd.write(byte(0)); // Inverted 4
+    if (currentPage == 3) lcd.write(PAGE_INDICATOR_4); // Inverted 4
     else lcd.print("4");                      // Normal 4
 }
 
@@ -175,14 +216,17 @@ ISR(INT0_vect)
 	encoder_changed = true;
 }
 
-Page* pages[4] = {
+Page* pages[] = {
 	&driverPage,
     &vcuPage,
     &bmsPage,
-    &reservedPage
+	&defaultPage,
 };
+constexpr uint8_t PAGE_COUNT = sizeof(pages) / sizeof(pages[0]);
 uint8_t currentPageIndex = 0;
 Page* currentPage = pages[currentPageIndex];
+//Page* DEFPage = pages[3];
+
 
 void setup()
 {
@@ -192,7 +236,6 @@ void setup()
 	cli();
 	EICRA |= (1 << ISC01);
 	EICRA &= ~(1 << ISC00);
-
 	EIMSK |= (1 << INT0);
 	sei();
 
@@ -204,10 +247,13 @@ void setup()
 	lcd.backlight();
 	lcd.setCursor(0, 0);
 	lcd.print("Dash Init ");
-	lcd.createChar(0, num1_inverted);
-    lcd.createChar(1, num2_inverted);
-    lcd.createChar(2, num3_inverted);
-    lcd.createChar(3, num4_inverted);
+	lcd.createChar(PAGE_INDICATOR_1, num1_inverted);
+    lcd.createChar(PAGE_INDICATOR_2, num2_inverted);
+    lcd.createChar(PAGE_INDICATOR_3, num3_inverted);
+    lcd.createChar(PAGE_INDICATOR_4, num4_inverted);
+	lcd.createChar(CHAR_LOCKED, byte_char_locked);
+	lcd.createChar(CHAR_PWR,byte_pwr);
+	lcd.createChar(CHAR_DEG, degCelsius);
 	for (int i = 0; i < 10; ++i)
 	{
 		delay(random(20, 100));
@@ -271,29 +317,34 @@ void setup()
 	delay(random(100, 200));
 	lcd.setCursor(0, 3);
 	lcd.print("Dash Ready! Race!");
-
-
-
-	delay(2000);
 	lcd.clear();
 	currentPage->setup();
 }
 
 
-
+const unsigned long PAGE_SWITCH_INTERVAL = 5000;
+long lastupdate = 0;
 void loop()
 {
+	if (millis() - lastupdate >= PAGE_SWITCH_INTERVAL)
+	{
+		lastupdate = millis();
+		currentPageIndex = (currentPageIndex + 1 + PAGE_COUNT) % PAGE_COUNT;
+		currentPage = pages[currentPageIndex];
+		lcd.clear();
+		currentPage->setup();
+		currentPage->update();
+		drawPageIndicators(currentPageIndex);
+	}
+
 	if (encoder_changed) {
-        currentPageIndex = (currentPageIndex + encoder_count) % 4;
+        currentPageIndex = (currentPageIndex + encoder_count + PAGE_COUNT) % PAGE_COUNT;
         currentPage = pages[currentPageIndex];
 		lcd.clear();
-		for(int i=0;i<4;i++){
-			lcd.setCursor(i,20);
-			lcd.print(++i);
-		}
         currentPage->setup();
         encoder_changed = false;
         encoder_count = 0;
+		drawPageIndicators(currentPageIndex);
     }
 	hasStarted = (car.pedal.status.bits.car_status == CarStatus::Drive);
 	MCP2515::ERROR read_state = can_vcu.readMessage(&rx_frame);
@@ -358,6 +409,5 @@ void loop()
 		odometer_integral += abs(motor_rpm);
 		lastLcdTick += lcd_update::update_interval_ms;
 		currentPage->update();
-		drawPageIndicators(currentPageIndex%4);
 	}
 }
