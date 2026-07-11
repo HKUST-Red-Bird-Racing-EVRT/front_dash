@@ -6,14 +6,35 @@
 
 struct I2cTransaction
 {
-    const uint8_t address_and_mode;
-    const uint8_t length; /**< Stores the length of the data to be written/read. @note For read data, the length stores the length of ACK bytes, i.e. total read byte count - 1.*/
-    uint8_t *const data;
-    constexpr I2cTransaction(uint8_t address_and_mode_, uint8_t length_, uint8_t *data_);
+    uint8_t address_and_mode;
+    uint8_t length; /**< Stores the length of the data to be written/read. @note For read data, the length stores the length of ACK bytes, i.e. total read byte count - 1.*/
+
+    union DataUnion
+    {
+        constexpr DataUnion(const uint8_t *write_) : write(write_) {}
+        constexpr DataUnion(uint8_t *read_) : read(read_) {}
+        const uint8_t *write;
+        uint8_t *read;
+    } data;
+
+    inline static constexpr I2cTransaction makeWrite(const uint8_t address, const uint8_t length, const uint8_t *const source);
+    inline static constexpr I2cTransaction makeChainedWrite(const uint8_t address, const uint8_t length, const uint8_t *const source);
+    inline static constexpr I2cTransaction makeRead(const uint8_t address, const uint8_t length, uint8_t *const destination);
+
+    static constexpr uint8_t REPEAT_MASK = 0x80;
+    static constexpr uint8_t LENGTH_MASK = ~(REPEAT_MASK);
+private:
+    constexpr I2cTransaction(const uint8_t address_and_mode_, const uint8_t length_, uint8_t *const data_);
+
+    constexpr I2cTransaction() : address_and_mode(0), length(0), data(static_cast<uint8_t *const>(nullptr)) {}
+
+    template <uint16_t BITRATE_KBPS, uint8_t PRIORITY_SIZE, uint8_t RECURRING_SIZE, uint8_t WATCHDOG_MAX_COUNT>
+    friend class I2C;
 };
 
 /**
- * @brief I2C Master Driver class template. Provides a high-speed, interrupt-driven I2C master interface with priority and recurring transaction support.
+ * @brief I2C Master Driver class template.
+ * Provides a high-speed, interrupt-driven I2C master interface with priority and recurring transaction support.
  * @details This class is designed for AVR microcontrollers and uses the TWI hardware module.
  * It supports a priority queue for urgent transactions and a recurring queue for periodic tasks.
  * The driver handles bus recovery in case of stuck conditions and provides a watchdog mechanism to detect bus hangs.
@@ -43,51 +64,23 @@ public:
     constexpr I2C();
 
     [[nodiscard]] constexpr bool pushPriority(const I2cTransaction &new_queuer);
-    [[nodiscard]] constexpr bool pushPriority(const uint8_t address_and_mode, const uint8_t length, uint8_t *const data);
 
     constexpr bool pushRecurring(const I2cTransaction &new_queuer);
-    constexpr bool pushRecurring(const uint8_t address_and_mode, const uint8_t length, uint8_t *const data);
 
     void pump();
 
     inline void handleIsr();
 
 private:
-    constexpr void init();
-    inline void finishIsr();
-    inline void restartIsr();
-    void recoverBus();
-
-    // priority queue
-    I2cTransaction priority_queue[PRIORITY_SIZE];
-    volatile uint8_t priority_write_index = 0;
-    volatile uint8_t priority_read_index = 0;
-    static constexpr uint8_t PRIORITY_MASK = PRIORITY_SIZE - 1;
-
-    // recurring queue
-    I2cTransaction recurring_queue[RECURRING_SIZE];
-    uint8_t recurring_size = 0;
-    volatile uint8_t recurring_index = 0;
-    static constexpr uint8_t RECURRING_MASK = RECURRING_SIZE - 1;
-
-    // state machine tracking
+    // =========================================================================
+    // Typedefs
+    // =========================================================================
     enum class I2cState : uint8_t
     {
         Idle = 0,
         Busy = 1,
         Hung = 2
     };
-
-    I2cTransaction *active_job = nullptr;
-    volatile uint8_t active_byte_index = 0;
-    volatile bool active_job_is_priority = false;
-    volatile I2cState bus_state = I2cState::Idle;
-
-    // watchdog
-    volatile uint8_t watchdog_pulsed = false;
-    uint8_t watchdog_count = 0;
-
-    // stuck bus recovery
     enum class RecoveryState : uint8_t
     {
         Init = 0,
@@ -95,10 +88,6 @@ private:
         ClockHigh = 2,
         Stop = 3
     };
-
-    RecoveryState recovery_state = RecoveryState::Init;
-    uint8_t recovery_count = 0;
-
     enum class I2cStatus : uint8_t
     {
         Start = 0x08,
@@ -114,6 +103,52 @@ private:
         DataReadNack = 0x58
         // slave modes not implemented
     };
+
+    // =========================================================================
+    // Private Methods
+    // =========================================================================
+
+    constexpr void init();
+    inline void finishIsr();
+    inline void restartIsr();
+    void recoverBus();
+
+    inline void setActiveJob(const I2cTransaction &job, bool is_priority);
+
+    // =========================================================================
+    // Private Members
+    // =========================================================================
+
+    // priority queue
+    I2cTransaction priority_queue[PRIORITY_SIZE] = {};
+    volatile uint8_t priority_write_index = 0;
+    volatile uint8_t priority_read_index = 0;
+    static constexpr uint8_t PRIORITY_MASK = PRIORITY_SIZE - 1;
+
+    // recurring queue
+    I2cTransaction recurring_queue[RECURRING_SIZE] = {};
+    uint8_t recurring_count = 0;
+    volatile uint8_t recurring_index = 0;
+    volatile bool recurring_queue_locked = false;
+
+    // state machine tracking
+    volatile uint8_t active_address_and_mode = 0;
+    volatile uint8_t active_length = 0;
+    volatile bool active_is_chained = false; // repeated start required after this
+    volatile uint8_t *active_data_ptr = nullptr;
+    volatile bool active_is_priority = false;
+    volatile uint8_t active_byte_index = 0;
+    
+    volatile I2cState bus_state = I2cState::Idle;
+
+    // watchdog
+    volatile uint8_t watchdog_pulsed = false;
+    uint8_t watchdog_count = 0;
+
+    // stuck bus recovery
+
+    RecoveryState recovery_state = RecoveryState::Init;
+    uint8_t recovery_count = 0;
 };
 
 #include "I2C.tpp"
