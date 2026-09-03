@@ -3,7 +3,7 @@
 #define STRUCTS_H
 
 #include <stdint.h>
-#include <LiquidCrystal_I2C.h>
+#include "Dash_I2C.hpp"
 #include "Enums.hpp"
 
 

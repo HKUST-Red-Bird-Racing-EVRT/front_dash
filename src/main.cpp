@@ -6,7 +6,7 @@
 
 #include <Arduino.h>
 #include <mcp2515.h>
-#include <LiquidCrystal_I2C.h>
+#include "Dash_I2C.hpp"
 #include <SoftwareSerial.h>
 #include "pinMap.h"
 #include "DashState.hpp"
@@ -14,6 +14,7 @@
 #include "Structs.h"
 #include "I2C.hpp"
 #include "namespace.h"
+#include <string.h>
 
 can_frame rx_frame;
 int message_count = 0;
@@ -22,9 +23,9 @@ bool pot_730_ready = false;
 bool pot_750_ready = false;
 bool hasStarted = false;
 
-
 uint16_t carstate = 0;
 
+DashI2CDriver i2c;
 LiquidCrystal_I2C lcd(0x27, 20, 4);
 
 // Page instances
@@ -33,8 +34,6 @@ DriverPage driverPage(lcd, dashState);
 VCUPage vcuPage(lcd, dashState);
 BMSPage bmsPage(lcd, dashState);
 DefaultPage defaultPage(lcd, dashState);
-
-
 
 // Define pin assignment using actual Arduino pin numbers
 // SPI Pins for CAN Controllers (MCP2515)
@@ -92,7 +91,6 @@ MCP2515 can_ssru(CAN1_CS);
  *
  */
 
-
 /**
  * @brief Arduino setup function.
  * @details It initializes serial communication
@@ -100,133 +98,145 @@ MCP2515 can_ssru(CAN1_CS);
 // update ticks
 uint32_t lastLcdTick = 0;
 uint32_t lastCanReadTick = 0;
+uint32_t idleStuckSince = 0;
 int8_t write_counter = 0;
 MCP2515 cans[NUM_MCP] = {can_vcu, can_ssru};
 
+// Custom-char glyphs live in flash (PROGMEM); DashLcd::createChar() reads them
+// with pgm_read_byte(). Keeps 7*8 = 56 B out of RAM.
+const byte num1_inverted[8] PROGMEM = {
+	B11111,
+	B11011,
+	B10011,
+	B11011,
+	B11011,
+	B11011,
+	B10001,
+	B11111};
+const byte num2_inverted[8] PROGMEM = {
+	B11111,
+	B10011,
+	B11101,
+	B11101,
+	B11011,
+	B10111,
+	B10001,
+	B11111};
+const byte num3_inverted[8] PROGMEM = {
+	B11111,
+	B10011,
+	B11101,
+	B11011,
+	B11101,
+	B10011,
+	B11111,
+	B00000};
+const byte num4_inverted[8] PROGMEM = {
+	B11111,
+	B10101,
+	B10101,
+	B10101,
+	B10001,
+	B11101,
+	B11101,
+	B11111};
+extern constexpr byte CHAR_LOCKED = 0;
+extern constexpr byte CHAR_DEG = 1;
+extern constexpr byte CHAR_PWR = 2;
+constexpr byte PAGE_INDICATOR_1 = 3;
+constexpr byte PAGE_INDICATOR_2 = 4;
+constexpr byte PAGE_INDICATOR_3 = 5;
+constexpr byte PAGE_INDICATOR_4 = 6;
 
+// Custom Char (in flash, see note above)
+const byte byte_char_locked[8] PROGMEM = {
+	0b01110,
+	0b10001,
+	0b10001,
+	0b11111,
+	0b11011,
+	0b11011,
+	0b11011,
+	0b11111};
+const byte byte_pwr[8] PROGMEM = {
+	0b11111,
+	0b11111,
+	0b11111,
+	0b11111,
+	0b11111,
+	0b11111,
+	0b11111,
+	0b11111};
+const byte degCelsius[8] PROGMEM = { // degree celsius char
+	0b01000,
+	0b10100,
+	0b01000,
+	0b00011,
+	0b00100,
+	0b00100,
+	0b00100,
+	0b00011};
 
-byte num1_inverted[8] = {
-	0b11011, 
-	0b10011,
-	0b11011, 
-	0b11011, 
-	0b11011, 
-	0b11011, 
-	0b10001, 
-	0b11111 };
-byte num2_inverted[8] = { 
-	0b10001, 
-	0b11101, 
-	0b11101, 
-	0b11011, 
-	0b10111, 
-	0b10111, 
-	0b10000, 
-	0b11111 };
-byte num3_inverted[8] = { 
-	0b10001, 
-	0b11101, 
-	0b11101, 
-	0b11001, 
-	0b11101, 
-	0b11101, 
-	0b10001, 
-	0b11111 };
-byte num4_inverted[8] = { 
-	0b11101, 
-	0b11001, 
-	0b10101, 
-	0b10000, 
-	0b11101, 
-	0b11101, 
-	0b11101, 
-	0b11111 };
-	constexpr byte CHAR_LOCKED = 0;
-    constexpr byte CHAR_DEG = 1;
-	constexpr byte CHAR_PWR = 2;
-    constexpr byte PAGE_INDICATOR_1 = 3;
-    constexpr byte PAGE_INDICATOR_2 = 4;
-    constexpr byte PAGE_INDICATOR_3 = 5;
-    constexpr byte PAGE_INDICATOR_4 = 6;
-
-
-	// Custom Char
-    byte byte_char_locked[8] = {
-        0b01110,
-        0b10001,
-        0b10001,
-        0b11111,
-        0b11011,
-        0b11011,
-        0b11011,
-        0b11111
-    };
-	byte byte_pwr[8] = {
-        0b11111,
-        0b11111,
-        0b11111,
-        0b11111,
-        0b11111,
-        0b11111,
-        0b11111,
-        0b11111
-    };
-	byte degCelsius[8] = { // degree celsius char
-        0b01000,
-        0b10100,
-        0b01000,
-        0b00011,
-        0b00100,
-        0b00100,
-        0b00100,
-        0b00011
-    };
-
-
-void drawPageIndicators(int currentPage) {
-    lcd.setCursor(19, 0);
-    if (currentPage == 0) lcd.write(PAGE_INDICATOR_1); // Inverted 1
-    else lcd.print("1");                      // Normal 1
-    lcd.setCursor(19, 1);
-    if (currentPage == 1) lcd.write(PAGE_INDICATOR_2); // Inverted 2
-    else lcd.print("2");                      // Normal 2
-    lcd.setCursor(19, 2);
-    if (currentPage == 2) lcd.write(PAGE_INDICATOR_3); // Inverted 3
-    else lcd.print("3");                      // Normal 3
-    lcd.setCursor(19, 3);
-    if (currentPage == 3) lcd.write(PAGE_INDICATOR_4); // Inverted 4
-    else lcd.print("4");                      // Normal 4
+void drawPageIndicators(int currentPage)
+{
+	lcd.setCursor(19,0);
+	if (currentPage == 0)
+	{
+		lcd.write(PAGE_INDICATOR_1); // Inverted 1
+	}
+	else
+		lcd.print("1"); // Normal 1
+	lcd.setCursor(19, 1);
+	if (currentPage == 1)
+		lcd.write(PAGE_INDICATOR_2); // Inverted 2
+	else
+		lcd.print("2"); // Normal 2
+	lcd.setCursor(19, 2);
+	if (currentPage == 2)
+		lcd.write(PAGE_INDICATOR_3); // Inverted 3
+	else
+		lcd.print("3"); // Normal 3
+	lcd.setCursor(19, 3);
+	if (currentPage == 3)
+		lcd.write(PAGE_INDICATOR_4); // Inverted 4
+	else
+		lcd.print("4"); // Normal 4
 }
-
-
 
 volatile uint8_t encoder_count = 0;
 volatile bool encoder_changed = false;
 
-ISR(INT0_vect)
+// ISR(INT0_vect)
+// {
+// 	if (PINC & (1 << PIN_SHIFT_ENC_B))
+// 	{ // clockwise
+// 		++encoder_count;
+// 	}
+// 	else
+// 	{ // anticlockwise
+// 		--encoder_count;
+// 	}
+// 	encoder_changed = true;
+// }
+
+ISR(TWI_vect)
 {
-	if (PINC & (1 << PIN_SHIFT_ENC_B))
-	{ // clockwise
-		++encoder_count;
-	}
-	else
-	{ // anticlockwise
-		--encoder_count;
-	}
-	encoder_changed = true;
+	i2c.handleIsr();
 }
 
-Page* pages[] = {
+Page *pages[] = {
 	&driverPage,
-    &vcuPage,
-    &bmsPage,
+	&vcuPage,
+	&bmsPage,
 	&defaultPage,
 };
 constexpr uint8_t PAGE_COUNT = sizeof(pages) / sizeof(pages[0]);
 uint8_t currentPageIndex = 0;
-Page* currentPage = pages[currentPageIndex];
-//Page* DEFPage = pages[3];
+Page *currentPage = pages[currentPageIndex];
+// Page* DEFPage = pages[3];
 
+const unsigned long PAGE_SWITCH_INTERVAL = 6000;
+long lastupdate;
 
 void setup()
 {
@@ -241,19 +251,25 @@ void setup()
 
 	randomSeed(analogRead(GPIO_1)); // Seed random number generator with noise from an unconnected analog pin for better randomness
 	Serial.begin(115200);
-	lcd.begin(20, 4);
-	lcd.clear();
-	lcd.init();
+	i2c.pump();
+	lcd.begin(20, 4); // begin() already lights the backlight, clears, and runs the full 4-bit init
 	lcd.backlight();
-	lcd.setCursor(0, 0);
-	lcd.print("Dash Init ");
-	lcd.createChar(PAGE_INDICATOR_1, num1_inverted);
-    lcd.createChar(PAGE_INDICATOR_2, num2_inverted);
-    lcd.createChar(PAGE_INDICATOR_3, num3_inverted);
-    lcd.createChar(PAGE_INDICATOR_4, num4_inverted);
 	lcd.createChar(CHAR_LOCKED, byte_char_locked);
-	lcd.createChar(CHAR_PWR,byte_pwr);
+	delay(10);
 	lcd.createChar(CHAR_DEG, degCelsius);
+	delay(10);
+	lcd.createChar(CHAR_PWR, byte_pwr);
+	delay(10);
+	lcd.createChar(PAGE_INDICATOR_1, num1_inverted);
+	delay(10);
+	lcd.createChar(PAGE_INDICATOR_2, num2_inverted);
+	delay(10);
+	lcd.createChar(PAGE_INDICATOR_3, num3_inverted);
+	delay(10);
+	lcd.createChar(PAGE_INDICATOR_4, num4_inverted);
+	delay(10);
+	lcd.setCursor(0,0);
+	lcd.print("Dash Init ");
 	for (int i = 0; i < 10; ++i)
 	{
 		delay(random(20, 100));
@@ -318,12 +334,12 @@ void setup()
 	lcd.setCursor(0, 3);
 	lcd.print("Dash Ready! Race!");
 	lcd.clear();
+	delay(10);
 	currentPage->setup();
+	drawPageIndicators(currentPageIndex);
+	lastupdate = millis();
 }
 
-
-const unsigned long PAGE_SWITCH_INTERVAL = 5000;
-long lastupdate = 0;
 void loop()
 {
 	if (millis() - lastupdate >= PAGE_SWITCH_INTERVAL)
@@ -332,20 +348,25 @@ void loop()
 		currentPageIndex = (currentPageIndex + 1 + PAGE_COUNT) % PAGE_COUNT;
 		currentPage = pages[currentPageIndex];
 		lcd.clear();
+		delay(10);
 		currentPage->setup();
+		delay(10);
 		currentPage->update();
+		i2c.pump();
 		drawPageIndicators(currentPageIndex);
 	}
 
-	if (encoder_changed) {
-        currentPageIndex = (currentPageIndex + encoder_count + PAGE_COUNT) % PAGE_COUNT;
-        currentPage = pages[currentPageIndex];
-		lcd.clear();
-        currentPage->setup();
-        encoder_changed = false;
-        encoder_count = 0;
-		drawPageIndicators(currentPageIndex);
-    }
+
+	// if (false && encoder_changed)
+	// {
+	// 	currentPageIndex = (currentPageIndex + encoder_count + PAGE_COUNT) % PAGE_COUNT;
+	// 	currentPage = pages[currentPageIndex];
+	// 	lcd.clear();
+	// 	currentPage->setup();
+	// 	encoder_changed = false;
+	// 	encoder_count = 0;
+	// 	drawPageIndicators(currentPageIndex);
+	// }
 	hasStarted = (car.pedal.status.bits.car_status == CarStatus::Drive);
 	MCP2515::ERROR read_state = can_vcu.readMessage(&rx_frame);
 	if (read_state == MCP2515::ERROR_OK)
@@ -354,6 +375,11 @@ void loop()
 		switch (rx_frame.can_id) // 20 20 200 ms counttime
 		{
 		case 0x700: // vcu pedals
+			// Unpack the 10-bit ADC channels packed by TelemetryFramePedal::fromCanFrame().
+			car.pedal.apps_5v = rx_frame.data[0] | (static_cast<uint16_t>(rx_frame.data[1] & 0x03) << 8);
+			car.pedal.apps_3v3 = ((rx_frame.data[1] >> 2) & 0x3F) | (static_cast<uint16_t>(rx_frame.data[2] & 0x0F) << 6);
+			car.pedal.brake = ((rx_frame.data[2] >> 4) & 0x0F) | (static_cast<uint16_t>(rx_frame.data[3] & 0x3F) << 4);
+			car.pedal.hall_sensor = ((rx_frame.data[3] >> 6) & 0x03) | (static_cast<uint16_t>(rx_frame.data[4]) << 2);
 			car.pedal.status.byte = rx_frame.data[5];
 			car.pedal.faults.byte = rx_frame.data[6];
 			carstate = (rx_frame.data[5]);
@@ -406,8 +432,28 @@ void loop()
 	}
 	if (millis() - lastLcdTick >= lcd_update::update_interval_ms)
 	{
-		odometer_integral += abs(motor_rpm);
+		odometer_integral += absU16(motor_rpm);
 		lastLcdTick += lcd_update::update_interval_ms;
 		currentPage->update();
+		i2c.pump();
 	}
+	if (!i2c.priorityEmpty())
+	{
+    if (idleStuckSince == 0)
+    {
+        idleStuckSince = millis();
+    }
+    else if (millis() - idleStuckSince > 500)
+    {
+        cli();
+        DashI2CDriver fresh;
+        memcpy(&i2c, &fresh, sizeof(DashI2CDriver));
+        sei();
+        idleStuckSince = 0;
+    }}
+	else
+	{
+    idleStuckSince = 0;
+    }
+
 }

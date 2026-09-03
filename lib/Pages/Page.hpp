@@ -2,8 +2,8 @@
  * @file Page.hpp
  * @author ChiHo
  * @brief Abstract Base Class for display pages
- * @version 1.0
- * @date 2026-05-28
+ * @version 1.5
+ * @date 2026-07-30
  * @see Page.tpp
  * @dir Page @brief The Page library provides an abstract base class for implementing different display pages on the dashboard. All pages inherit from this base class and must implement setup() and update() methods for page lifecycle management.
  */
@@ -13,7 +13,7 @@
 
 #include "namespace.h"
 #include <stdint.h>
-#include <LiquidCrystal_I2C.h>
+#include "Dash_I2C.hpp"
 
 struct DashState;
 

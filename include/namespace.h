@@ -3,9 +3,21 @@
 
 #include <Arduino.h>
 #include <mcp2515.h>
-#include <LiquidCrystal_I2C.h>
+#include "Dash_I2C.hpp"
 #include <stdint.h>
 #include <SoftwareSerial.h>
+
+/**
+ * @brief |v| for an int16_t, safe against INT16_MIN.
+ * @details AVR `int` is 16-bit, so the stdlib/Arduino `abs()` computes `-(-32768)`
+ * which overflows (UB, stays negative) and then poisons any following unsigned
+ * math. Promote to 32-bit before negating.
+ */
+inline uint16_t absU16(int16_t v)
+{
+	return v < 0 ? static_cast<uint16_t>(-static_cast<int32_t>(v))
+				 : static_cast<uint16_t>(v);
+}
 
 namespace lcd_update
 {
