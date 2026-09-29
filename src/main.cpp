@@ -437,7 +437,7 @@ void loop()
 		currentPage->update();
 		i2c.pump();
 	}
-	if (!i2c.priorityEmpty())
+	if (!i2c.queueEmpty())
 	{
     if (idleStuckSince == 0)
     {

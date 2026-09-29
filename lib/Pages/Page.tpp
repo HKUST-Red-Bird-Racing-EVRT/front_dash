@@ -203,23 +203,33 @@ constexpr uint16_t THROTTLE_ADC_MAX = 1023;
 
 constexpr uint8_t BMS_BYTE_VOLTAGE_MAX = 0; // uint16_t, bytes 0-1, max cell voltage, placeholder units: 0.1V/count (fits the 3-column "D.D" gap in BMSPage's layout)
 constexpr uint8_t BMS_BYTE_VOLTAGE_MIN = 2; // uint16_t, bytes 2-3, min cell voltage, same units
-constexpr uint8_t BMS_BYTE_CURRENT = 4;     // int16_t, bytes 4-5, pack current, placeholder units: 0.1A/count, +discharge/-charge - reserved but not shown: current setup() layout has no labeled space for it
+constexpr uint8_t BMS_BYTE_CURRENT = 4;     // int16_t, bytes 4-5, pack current, placeholder units: 0.1A/count, +discharge/-charge - drives DriverPage::updatepwr()'s regen bar
 constexpr uint8_t BMS_BYTE_TEMP = 6;        // int8_t, byte 6, max cell temperature in deg C
 constexpr uint8_t BMS_BYTE_STATUS = 7;      // uint8_t, byte 7, BMS status/fault bitfield
 
+// TODO: placeholder max pack current (0.1A/count = 400A) for the regen/discharge bar, confirm against BMS spec.
+constexpr uint16_t MAX_PACK_CURRENT_DECIAMP = 4000;
+
 void DriverPage::updatepwr(){
 	// telembms is never populated anywhere (see DefaultPage::update note); read the
-	// live global `bms` instead. Byte 2 is a placeholder for pack charge / SOC %.
-	uint8_t pct = bms.raw_data[2];
-	if (pct > 100)
+	// live global `bms` instead. Pack current: BMS_BYTE_CURRENT/+1, int16_t,
+	// +discharge/-charge (regen). Sign is shown as a leading '+'/'-', magnitude
+	// as a 9-cell bar, so the whole indicator keeps the same 10-column footprint
+	// (cols 8-17) the old unsigned bar used.
+	int16_t current = static_cast<int16_t>(static_cast<uint16_t>(bms.raw_data[BMS_BYTE_CURRENT]) |
+	                                        (static_cast<uint16_t>(bms.raw_data[BMS_BYTE_CURRENT + 1]) << 8));
+	bool regen = current < 0;
+	uint16_t mag = absU16(current);
+	if (mag > MAX_PACK_CURRENT_DECIAMP)
 	{
-		pct = 100;
+		mag = MAX_PACK_CURRENT_DECIAMP;
 	}
-	uint8_t bars = pct / 10; // 0..10 filled cells
-	// One setCursor, then 10 back-to-back cells relying on the LCD's auto-increment.
+	uint8_t bars = static_cast<uint8_t>(static_cast<uint32_t>(mag) * 9 / MAX_PACK_CURRENT_DECIAMP); // 0..9 filled cells
+	// One setCursor, then back-to-back cells relying on the LCD's auto-increment.
 	// Always write the full width so the bar shrinks when the value drops.
 	lcd.setCursorQueued(8, 1);
-	for (uint8_t i = 0; i < 10; ++i)
+	lcd.writeQueued(regen ? '-' : '+');
+	for (uint8_t i = 0; i < 9; ++i)
 	{
 		lcd.writeQueued(i < bars ? CHAR_PWR : ' ');
 	}

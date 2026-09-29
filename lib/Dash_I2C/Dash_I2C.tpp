@@ -222,12 +222,12 @@ void DashLcd::expanderWriteBlocking(uint8_t data)
     blockingTxBuffer = static_cast<uint8_t>((data | backlightval) & 0xFF);
     I2cTransaction tx = I2cTransaction::makeWrite(addr, 1, &blockingTxBuffer);
 
-    while (!i2c.pushPriority(tx))
+    while (!i2c.push(tx))
     {
         i2c.pump();
     }
     i2c.pump();
-    while (!i2c.priorityEmpty())
+    while (!i2c.queueEmpty())
     {
         i2c.pump();
     }
@@ -269,7 +269,7 @@ bool DashLcd::expanderWriteQueued(uint8_t data)
     // losing the rest of the frame. The priority queue holds at most
     // PRIORITY_SIZE-1 entries while queuedTxBuffer has PRIORITY_SIZE slots, so
     // the slot we just wrote is never one that is still in flight.
-    while (!i2c.pushPriority(tx))
+    while (!i2c.push(tx))
     {
         i2c.pump();
     }

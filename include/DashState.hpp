@@ -1,6 +1,6 @@
 /**
  * @file DashState.hpp
- * @author Planeson, Red Bird Racing
+ * @author ChiHo Ngan, Red Bird Racing
  * @brief Definition of the DashState structure representing the state of the car
  * Changed to not send canframes
  * @version 1.0
