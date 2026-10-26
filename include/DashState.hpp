@@ -1,8 +1,7 @@
 /**
  * @file DashState.hpp
  * @author ChiHo Ngan, Red Bird Racing
- * @brief Definition of the DashState structure representing the state of the car
- * Changed to not send canframes
+ * @brief Car state decoded from the VCU telemetry frames.
  * @version 1.0
  * @date 2026-05-30
  * @see can.h, Enums.h
@@ -16,10 +15,8 @@
 #include <stdint.h>
 
 constexpr canid_t TELEMETRY_PEDAL_MSG = 0x700; /**< Telemetry: Pedal readings message */
-constexpr canid_t TELEMETRY_MOTOR_MSG = 0x701; /**< Telemetry: Digital signals message */
-constexpr canid_t TELEMETRY_BMS_MSG = 0x710;   /**< Telemetry: Car state message */
-
-
+constexpr canid_t TELEMETRY_MOTOR_MSG = 0x701; /**< Telemetry: Motor message */
+constexpr canid_t TELEMETRY_BMS_MSG = 0x710;   /**< Telemetry: BMS message */
 
 /**
  * @brief Telemetry frame structure for the Pedals.
@@ -35,7 +32,7 @@ struct TelemetryFramePedal
     union StateByteStatus
     {
         uint8_t byte; /**< Byte representation of the status bits */
-        
+
         /** @brief Bitfield representation of the status bits */
         struct Bits
         {
@@ -67,13 +64,13 @@ struct TelemetryFramePedal
         } bits;
     };
 
-    static_assert(sizeof(StateByteStatus) == 1, "TelemetryStateByte0 must be 1 byte"); // ensure compile is shoving the bits as expected
+    static_assert(sizeof(StateByteStatus) == 1, "TelemetryStateByte0 must be 1 byte");
     static_assert(sizeof(StateByteFaults) == 1, "TelemetryStateByte1 must be 1 byte");
 
     StateByteStatus status; /**< Car Status */
     StateByteFaults faults; /**< Pedal Faults */
 
-
+    /** @brief Pack into a 0x700 frame. */
     constexpr can_frame fromCanFrame() const
     {
         return can_frame{
@@ -90,7 +87,6 @@ struct TelemetryFramePedal
     }
 };
 
-
 /**
  * @brief Telemetry frame structure for motor signals.
  */
@@ -101,6 +97,7 @@ struct TelemetryFrameMotor
     uint16_t motor_error; /**< Motor status byte */
     uint16_t motor_warn;  /**< Motor error/warning byte */
 
+    /** @brief Pack into a 0x701 frame. */
     constexpr can_frame fromCanFrame() const
     {
         return can_frame{
@@ -122,10 +119,9 @@ struct TelemetryFrameMotor
  */
 struct TelemetryFrameBms
 {
-
     uint8_t bms_data[8]; /**< Raw BMS data bytes */
 
-
+    /** @brief Pack into a 0x710 frame. */
     constexpr can_frame fromCanFrame() const {
         return can_frame{
             TELEMETRY_BMS_MSG, // can_id
@@ -138,7 +134,7 @@ struct TelemetryFrameBms
             bms_data[5],
             bms_data[6],
             bms_data[7]};
-    }}telembms;
+    }};
 
 /**
  * @brief Represents the state of the car.
@@ -148,9 +144,11 @@ struct TelemetryFrameBms
  */
 struct DashState
 {
-    TelemetryFramePedal pedal; /**< Struct holding pedal telemetry data, ready for sending over CAN */
-    TelemetryFrameMotor motor; /**< Struct holding motor telemetry data, ready for sending over CAN */
-    TelemetryFrameBms bms;     /**< Struct holding BMS telemetry data, ready for sending over CAN */
-}car;
+    TelemetryFramePedal pedal; /**< Pedal telemetry */
+    TelemetryFrameMotor motor; /**< Motor telemetry */
+    TelemetryFrameBms bms;     /**< BMS telemetry */
+};
+
+extern DashState car; /**< Live car state, defined in main.cpp */
 
 #endif // DASH_STATE_HPP

@@ -1,12 +1,12 @@
 /**
  * @file Radio.cpp
- * @author ChiHo Ngan, Red Bird Racing 
- * @brief HC-12 telemetry transmitter implementation.
+ * @author ChiHo Ngan, Red Bird Racing
+ * @brief Radio implementation.
  * @version 1.0
  * @date 2026-07-24
- * 
+ *
  * @copyright Copyright (c) 2026
- * @see Radio.hpp for the overall design notes / placeholder disclaimers.
+ * @see Radio.hpp
  */
 
 #include "Radio.hpp"
@@ -22,9 +22,6 @@ void Radio::begin()
     hc12.begin(RADIO_BAUD);
 }
 
-/**
- * @brief Simple additive checksum over the frame contents.
- */
 uint8_t Radio::checksum(const RadioFrame &frame)
 {
     uint8_t sum = frame.type;
@@ -39,11 +36,6 @@ uint8_t Radio::checksum(const RadioFrame &frame)
     return sum;
 }
 
-/**
- * @brief Wire format (all placeholder)
- * [START_BYTE][time: 4 bytes, little-endian][type: 1 byte][data: 24 bytes][checksum: 1 byte]
-
- */
 void Radio::send(const RadioFrame &frame)
 {
     hc12.write(RADIO_FRAME_START_BYTE);
@@ -59,12 +51,7 @@ void Radio::updateVcu()
     frame.time = millis();
     frame.type = static_cast<uint8_t>(RadioMsgType::Vcu);
 
-    // TODO: VcuData is an empty placeholder in Structs.h until the VCU CAN
-    // signal mapping is confirmed.
-    //
-    //   VcuData vcu_data = { ... };
-    //   static_assert(sizeof(vcu_data) <= sizeof(frame.data)
-    //   memcpy(frame.data, &vcu_data, sizeof(vcu_data));
+    // TODO: fill frame.data from VcuData
 
     send(frame);
 }
@@ -75,7 +62,7 @@ void Radio::updateSsruFront()
     frame.time = millis();
     frame.type = static_cast<uint8_t>(RadioMsgType::SsruFront);
 
-    // TODO:SsruFrontData is currently template
+    // TODO: fill frame.data from SsruFrontData
 
     send(frame);
 }
@@ -86,7 +73,7 @@ void Radio::updateSsruRear()
     frame.time = millis();
     frame.type = static_cast<uint8_t>(RadioMsgType::SsruRear);
 
-    // TODO:SsruRearData is currently empty. See ssru_r_msg.h.
+    // TODO: fill frame.data from SsruRearData
 
     send(frame);
 }
@@ -95,7 +82,7 @@ void Radio::enterConfigMode()
 {
     pinMode(HC12_SET, OUTPUT);
     digitalWrite(HC12_SET, LOW);
-    delay(80); // HC-12 needs >40ms to switch into AT mode?
+    delay(80);
 }
 
 void Radio::exitConfigMode()

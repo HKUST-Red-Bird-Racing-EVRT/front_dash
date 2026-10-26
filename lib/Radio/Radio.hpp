@@ -1,10 +1,10 @@
 /**
  * @file Radio.hpp
- * @author ChiHo Ngan, Red Bird Racing 
- * @brief HC-12 telemetry transmitter implementation.
+ * @author ChiHo Ngan, Red Bird Racing
+ * @brief HC-12 telemetry transmitter.
  * @version 1.0
  * @date 2026-08-3
- * 
+ *
  * @copyright Copyright (c) 2026
  */
 
@@ -16,9 +16,8 @@
 #include "Structs.h"
 
 /**
- * @brief Message type identifier carried in RadioFrame::type, so the ground
- *        station knows which DashData member the payload bytes belong to.
- * @note Placeholder values - confirm with decoder for values.
+ * @brief Payload type in RadioFrame::type.
+ * @note Placeholder values, confirm with the decoder.
  */
 enum class RadioMsgType : uint8_t
 {
@@ -28,63 +27,44 @@ enum class RadioMsgType : uint8_t
 };
 
 constexpr uint8_t RADIO_FRAME_START_BYTE = 0x7E; ///< TODO: confirm with decoder
-constexpr uint32_t RADIO_BAUD = 115200;            ///< HC-12 default transparent-mode baud
+constexpr uint32_t RADIO_BAUD = 115200;          ///< HC-12 UART baud
 
 /**
- * @brief Packages telemetry into RadioFrame packets and transmits them to the
- *        ground station over an HC-12 433MHz transceiver in transparent
- *        (UART passthrough) mode.
- *
- * @details The dashboard only serializes and sends raw telemetry - any
- * decoding/decryption happens on the receiving computer.
- *
- * @note Everything below is currently a placeholder
+ * @brief Sends RadioFrame packets to the ground station over an HC-12 in transparent mode.
+ * @note Placeholder, not used yet.
  */
 class Radio
 {
 public:
-    /**
-     * @param serial Reference to the SoftwareSerial instance wired to the HC-12's RXD/TXD pins.
-     */
+    /** @param serial SoftwareSerial wired to the HC-12. */
     explicit Radio(SoftwareSerial &serial);
 
-    /**
-     * @brief Opens the UART link to the HC-12 at RADIO_BAUD. Call once from setup().
-     */
+    /** @brief Open the UART at RADIO_BAUD. */
     void begin();
 
     /**
-     * @brief Serializes and transmits a single RadioFrame over the HC-12 link.
-     * @param frame The frame to send. frame.time should be filled in by the caller (e.g. millis()).
+     * @brief Send one frame: [start][time 4][type 1][data 24][checksum 1].
+     * @param frame Frame to send.
      */
     void send(const RadioFrame &frame);
 
-    /**
-     * @brief Packages the latest VCU telemetry into a RadioFrame and sends it.
-     * @note VcuData is currently an empty placeholder struct (see Structs.h) -
-     * fill in its fields (from the same 'car'/torque_val/motor_rpm state the
-     * LCD pages read) and this function's body once VCU CAN signals are confirmed.
-     */
+    /** @brief Send the VCU telemetry. TODO: payload. */
     void updateVcu();
 
-    /// @brief Packages and sends the latest front SSRU telemetry. @see updateVcu
+    /** @brief Send the front SSRU telemetry. TODO: payload. */
     void updateSsruFront();
 
-    /// @brief Packages and sends the latest rear SSRU telemetry. @see updateVcu
+    /** @brief Send the rear SSRU telemetry. TODO: payload. */
     void updateSsruRear();
 
-    /**
-     * @brief Pulls the HC-12's SET pin low, putting it into AT command mode so
-     * configuration commands (channel/power/baud) can be sent over `serial`.
-     * @note Only for a one-off bench configuration session - do not call this
-     * from loop(), the module drops out of transparent mode while in AT mode.
-     */
+    /** @brief Pull SET low to enter AT command mode. Bench use only. */
     void enterConfigMode();
 
-    /// @brief Returns the HC-12 to normal transmit mode after enterConfigMode().
+    /** @brief Release SET to return to transparent mode. */
     void exitConfigMode();
 
 private:
+    /** @return 8-bit sum of time, type and data. */
     static uint8_t checksum(const RadioFrame &frame);
 
     SoftwareSerial &hc12;

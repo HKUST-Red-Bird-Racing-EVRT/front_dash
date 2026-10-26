@@ -1,3 +1,10 @@
+/**
+ * @file namespace.h
+ * @author ChiHo Ngan, Red Bird Racing
+ * @brief LCD update timing and RPM / speed / odometer conversion constants.
+ * @version 1.0
+ * @date 2026-10-27
+ */
 #ifndef FRONT_DASH_NAMESPACE_H
 #define FRONT_DASH_NAMESPACE_H
 
@@ -8,10 +15,8 @@
 #include <SoftwareSerial.h>
 
 /**
- * @brief |v| for an int16_t, safe against INT16_MIN.
- * @details AVR `int` is 16-bit, so the stdlib/Arduino `abs()` computes `-(-32768)`
- * which overflows (UB, stays negative) and then poisons any following unsigned
- * math. Promote to 32-bit before negating.
+ * @brief Absolute value of an int16_t, valid for INT16_MIN.
+ * @return |v| as uint16_t.
  */
 inline uint16_t absU16(int16_t v)
 {
@@ -19,19 +24,22 @@ inline uint16_t absU16(int16_t v)
 				 : static_cast<uint16_t>(v);
 }
 
+/** @brief LCD refresh timing. */
 namespace lcd_update
 {
-	constexpr uint8_t cycle_rate = 4; // lcd hz
-	constexpr uint8_t update_items = 5;
-	constexpr uint8_t update_count = cycle_rate * update_items;
+	constexpr uint8_t cycle_rate = 4;                           ///< Full page refreshes per second
+	constexpr uint8_t update_items = 5;                         ///< Fields per page
+	constexpr uint8_t update_count = cycle_rate * update_items; ///< LCD ticks per second
 
 	static_assert((1000 / update_count) * update_count == 1000, "update_count must be a factor of 1000 to avoid truncation.");
 
-	constexpr uint8_t update_interval_ms = 1000 / update_count;
+	constexpr uint8_t update_interval_ms = 1000 / update_count; ///< Time between LCD ticks
 }
 
+/** @brief Motor RPM to speed and distance conversion. */
 namespace rpm_calc
 {
+	/** @return base^exp at compile time. */
 	constexpr uint32_t ipow(uint32_t base, unsigned exp)
 	{
 		return exp == 0 ? 1u : base * ipow(base, exp - 1);
@@ -40,7 +48,6 @@ namespace rpm_calc
 	constexpr uint8_t GEAR_RATIO_NUMERATOR = 50;   /**< Gear ratio numerator of the drivetrain. */
 	constexpr uint8_t GEAR_RATIO_DENOMINATOR = 13; /**< Gear ratio denominator of the drivetrain. */
 
-	// === Calculation for RPM threshold ===
 	constexpr uint16_t WHEEL_DIAMETER_MM = 455;		  /**< Wheel diameter in millimeters (actual recorded). */
 	constexpr uint16_t MAX_MOTOR_RPM = 7000;		  /**< Maximum motor RPM. */
 	constexpr uint16_t MAX_MOTOR_RPM_READING = 32767; /**< Maximum motor RPM reading from CAN (2^15 - 1 for signed 16-bit). */
@@ -53,10 +60,11 @@ namespace rpm_calc
 	constexpr uint32_t FIXED_POINT_MULTIPLIER = ipow(10, NUM_DECIMAL_PLACE); /**< Multiplier to adjust for decimal places */
 	constexpr double PI_ = 3.1415926535897932384626433832795;				 /**< Value of pi, unnamed to avoid clashing with Arduino.h's definition. */
 
-	/** Divide by this constant to get  */
+	/** @brief Divide the motor RPM reading by this to get km/h. */
 	constexpr uint16_t RPM_TO_KMH_DIVISOR = (double)MAX_TORQUE_VAL / MAX_MOTOR_RPM /
 												WHEEL_DIAMETER_MM / PI_ * MM_PER_KM / MINUTES_PER_HOUR / GEAR_RATIO_DENOMINATOR * GEAR_RATIO_NUMERATOR +
 											0.5f;
+	/** @brief Divide odometer_integral by this to get km with NUM_DECIMAL_PLACE decimals. */
 	constexpr uint32_t RPM_INTEGRAL_TO_KM_DIVISOR = (double)MAX_TORQUE_VAL / MAX_MOTOR_RPM /
 														WHEEL_DIAMETER_MM / PI_ * MM_PER_KM / MINUTES_PER_HOUR / GEAR_RATIO_DENOMINATOR * GEAR_RATIO_NUMERATOR *
 														lcd_update::update_count * SECONDS_PER_HOUR / FIXED_POINT_MULTIPLIER +

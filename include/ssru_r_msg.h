@@ -1,5 +1,5 @@
-#ifndef SSRU_F_MSG_H
-#define SSRU_F_MSG_H
+#ifndef SSRU_R_MSG_H
+#define SSRU_R_MSG_H
 
 #include <stdint.h>
 
